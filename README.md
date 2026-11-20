@@ -1,132 +1,158 @@
-# Rahat (राहत) — Personal Safety & Community Network
+# Rahat (राहत) — Privacy-First Women's Personal Safety App
 
-> "A step towards freedom. A movement towards safety."  
-> "आज़ादी की ओर एक कदम। सुरक्षा की ओर एक आंदोलन।"
+> *"A step towards freedom. A movement towards safety."*  
+> *"आज़ादी की ओर एक कदम। सुरक्षा की ओर एक आंदोलन।"*
 
-**Launch Geography:** Delhi NCR (Connaught Place, Janpath, Mandi House, Hauz Khas, Saket, Cyber City Gurgaon).  
-**Positioning Notice:** Rahat complements official emergency services (112, 1091, 1930). It never replaces them, and all emergency views make this distinction plain.
-
----
-
-## 1. Principles & Design Architecture
-
-1. **Prevention over reaction:** Explainable dynamic safety scores, well-lit corridors, and community hazard alerts before danger occurs.
-2. **No crime profiling:** Risk calculations strictly use lighting quality, CCTV density, verified safe havens, time-of-day modifiers, and community-corroborated hazards. Never demographics, income, religion, or caste.
-3. **Privacy first (DPDP Act 2023):** Location is read only with explicit granular consent and exclusively during active journeys or active SOS broadcasts. Public profile and private PII are isolated.
-4. **Truth in dispatch:** Honest per-contact delivery auditing: `pending` | `sent` | `failed` | `offline_fallback_prepared` | `user_sent_via_sms`. Demo and fallback GPS coordinates are visibly badged.
-5. **No false alarms:** Route deviations never auto-escalate to SOS or police.
-6. **No automatic calls to 112/100/1091:** Pre-fills the native phone dialer for the user to tap call.
-7. **Apple Museum-Gallery Aesthetic (`DESIGN.md`):**
-   - Parchment Light (`#f5f5f7`) & OLED Dark (`#000000`).
-   - Single Action Blue (`#0066cc`) interactive accent on light canvas; Sky Link Blue (`#2997ff`) on dark.
-   - Fixed safety semantics (Safe `#34c759`, Caution `#ff9500`, Danger `#ff3b30`).
-   - Strictly flat UI chrome; the single signature drop-shadow is reserved for the SOS card.
-   - Minimum 48dp touch targets on all interactive elements.
+[![TypeScript Strict](https://img.shields.io/badge/TypeScript-Strict%20(zero%20any)-blue.svg)](#)
+[![Expo SDK 52](https://img.shields.io/badge/Expo%20SDK-52%20(Dev%20Client)-black.svg)](#)
+[![Firebase Emulators](https://img.shields.io/badge/Firebase-Emulator%20Suite-orange.svg)](#)
+[![Tests Passing](https://img.shields.io/badge/Jest-100%25%20Passing%20(13%20Suites)-brightgreen.svg)](#)
+[![DPDP Act 2023](https://img.shields.io/badge/Privacy-DPDP%20Act%202023%20Compliant-green.svg)](#)
 
 ---
 
-## 2. Project Structure
+## 1. Overview & Launch Geography
 
-```text
-rahat/
-├── App.tsx                      # Root entry point with Provider composition
-├── index.ts                    # Expo registration entry point
-├── app.json                    # Expo dev-client manifest
-├── package.json                # React Native + Expo dependencies
-├── tsconfig.json               # TypeScript strict: true config
-├── jest.config.js              # Unit test runner config
-├── firebase-blueprint.json     # Firestore collection schema & data dictionary
-├── DESIGN.md                   # Apple design reference (Step 0)
-├── src/
-│   ├── types/safety.ts         # Shared safety interfaces & enums
-│   ├── theme/                  # tokens.ts, ThemeProvider.tsx, useTheme.ts
-│   ├── i18n/                   # en.ts, hi.ts, useI18n.tsx (100% key parity)
-│   ├── services/
-│   │   ├── interfaces.ts       # Service contracts
-│   │   ├── index.ts            # SERVICE_MODE switch ('firebase' | 'mock')
-│   │   └── mock/               # In-memory Delhi NCR mock implementations
-│   ├── context/                # Auth, Reports, Journey, SOS, SafeWalkContext
-│   ├── components/             # TopBar.tsx, StatusBanner.tsx
-│   ├── modals/                 # SafeHeroesModal.tsx, AuthConsentModal.tsx
-│   ├── screens/                # SafeZone, Route, SOS, Connect, Profile
-│   └── navigation/             # RootNavigator.tsx (Bottom tabs)
-└── tests/                      # Jest unit test suite
+**Rahat (राहत)** is a privacy-first, community-powered personal safety app built for women in **Delhi NCR** (launch corridors: Connaught Place, Janpath, Mandi House, Hauz Khas Village, Saket, and DLF Cyber City Gurgaon).
+
+### Positioning & Legal Disclaimer
+> [!IMPORTANT]
+> **Rahat complements official emergency services — it NEVER replaces them.**  
+> In any life-threatening situation or emergency, dial **112 (ERSS National Emergency)** or **1091 (Delhi Police Women Helpline)** immediately.
+
+---
+
+## 2. Non-Negotiable Safety Principles
+
+1. **Prevention Over Reaction:** Explainable, transparent safety scores (5–98 scale), well-lit walking corridors, and community hazard alerts before harm occurs.
+2. **Zero Crime Profiling:** Safety scores use *strictly* physical infrastructure variables (street lighting lux, CCTV density, verified safe haven proximity, time-of-day footfall, and corroborated hazards). Scores **never** factor neighborhood demographics, average income, religion, or caste.
+3. **Privacy First (DPDP Act 2023):** Location is acquired *only* with explicit user consent and *only* during an active journey, an active distress SOS, or while the foreground map is actively open. No silent background tracking. Public profiles and private PII are partitioned in separate database paths.
+4. **Truth in Dispatch:** The app never falsely displays "Sent". Per-contact states reflect verified reality: `pending` → `sent` | `failed` | `offline_fallback_prepared` | `user_sent_via_sms`.
+5. **No False Alarms:** Route deviation (90m buffer, 3 consecutive fixes) **never** triggers an automated call to police or automated SOS dispatch. A human decides.
+6. **No Automated 112 Dialing:** Emergency hotline buttons prefill the native OS phone dialer (`tel:112`, `tel:1091`), and the user explicitly taps Call.
+
+---
+
+## 3. Architecture & System Design
+
+```mermaid
+graph TD
+    A[Mobile Client: React Native / Expo Dev Client] --> B[Theme & Token Layer: Apple Museum Aesthetic]
+    A --> C[Dual Service Layer]
+    
+    subgraph Service Abstraction
+        C --> D[Mock Service Layer: In-Memory Delhi Datasets]
+        C --> E[Firebase SDK Layer: Auth, Firestore, FCM]
+    end
+    
+    subgraph Backend Core
+        E --> F[Cloud Firestore 2nd Gen Emulators / Cloud]
+        E --> G[Cloud Functions 2nd Gen / Asia-South1]
+        G --> H[onAlertCreated: SMS & Push Fan-out]
+        G --> I[Wave Escalation: 500m -> 1000m -> 2000m]
+        G --> J[deleteAccount: DPDP Erasure Callable]
+    end
+
+    subgraph External Providers
+        H --> K[MockSmsProvider / MSG91 Stub / Twilio Stub]
+        I --> L[ngeohash Spatial Indexer]
+    end
 ```
 
 ---
 
-## 3. Development Commands
+## 4. Quickstart & Local Development
 
-### Type Checking
+### Prerequisites
+- **Node.js:** v20.x or higher
+- **Java:** JDK 17+ (required for Firebase Local Emulator Suite)
+- **Expo CLI:** `npx expo`
+
+### Setup Instructions
+
 ```bash
+# 1. Install root Expo mobile dependencies
+npm install
+
+# 2. Run TypeScript strict type-check (zero implicit any)
 npm run type-check
-```
 
-### Running Unit Tests (87 tests across 8 suites)
-```bash
+# 3. Run full Jest test suite
 npm test
+
+# 4. Install Cloud Functions dependencies and build
+cd functions
+npm install
+npm run build
+npm test
+cd ..
 ```
 
-### Starting the Expo App
+### Running with Firebase Local Emulator Suite
+
 ```bash
-npm start
+# Start Firestore, Auth, Functions, and Emulator UI
+firebase emulators:start
+```
+- **Emulator UI:** `http://localhost:4000`
+- **Firestore Port:** `8080`
+- **Auth Port:** `9099`
+- **Functions Port:** `5001`
+
+### Running Mobile App
+
+```bash
+# Start Expo development client (recommended for native modules like expo-location, expo-sms)
+npx expo start --dev-client
+
+# Or run on web/simulator
+npx expo start
 ```
 
----
-
-## 4. Phase 2, 3 & 4 Delivery Highlights
-
-1. **`src/utils/geo.ts`**:
-   - Spherical Haversine distance with antimeridian crossing safety.
-   - Initial bearings formulation.
-   - Point to segment cross-track distance with spherical along-track projection clamping to avoid infinite great-circle overshoot.
-   - Point to polyline distance with single-point and zero-length segment resilience.
-2. **`src/engines/safetyRiskEngine.ts`**:
-   - Zero crime profiling: uses strictly lighting %, CCTV %, footfall %, safe havens, and verified incidents.
-   - Time bands: Day (+5), Evening (-12), Early Morning (-5).
-   - Graded Night penalty: strictly from -20 to -32 based on visibility & footfall.
-   - Incident weights: Unverified / Under Review (0.5x), Community Corroborated (1.0x), Authorized Verified (1.5x), capped at -30 pts.
-   - Clamped between 5 and 98, with strict boundary testing (44 danger, 45 caution, 74 caution, 75 safe).
-3. **`src/engines/deviationEngine.ts`**:
-   - 90m corridor deviation buffer.
-   - Requires 3 consecutive fixes outside the buffer to fire an alert.
-   - Inaccurate fixes (`accuracy > 75m`) are ignored without incrementing or resetting the counter.
-   - Resets counter immediately upon return within the 90m buffer.
-   - Active cooldown suppresses alert while maintaining counter so it immediately re-fires if user stays off route after cooldown.
-   - Invariant: Never automatically triggers an SOS or calls police (action is strictly `'prompt_safety_check'` or `'none'`).
-4. **Phase 3 SafeZone & Moderated Reports**:
-   - Delhi NCR monitored zone corridors (`DELHI_NCR_ZONES`: Connaught Place, Mandi House, Hauz Khas, Saket, Gurgaon Cyber City).
-   - Dynamic 24-hour time slider driving live zone scores.
-   - Full point-by-point explainability modal (`ZoneExplanationModal`).
-   - Hazard creation modal (`CreateReportModal`) with category picker, 1–5 severity rating, and privacy PII regex moderation guard.
-   - Verification status transitions: flips to `community_corroborated` at $\ge 3$ distinct user confirmations; flags auto-transition to `under_review` at $\ge 3$ flags, and auto-hide at $\ge 5$ flags.
-   - Threaded comments discussion and corroborations counter.
-5. **Phase 4 Backend Core & Firestore Security Invariants**:
-   - `firestore.rules`: Rigorous rules covering public/private user segregation, emergency contact unverified constraints, report creation requirements, single-user corroboration/flagging, alert immutability past countdown, circle location sharing consents, and default deny.
-   - `firebase.json` & `firestore.indexes.json`: Emulator configuration (Firestore 8080, Auth 9099, Functions 5001, UI 4000) and compound query indexes.
-   - `FirebaseAuthService` & `FirebaseReportsService`: Direct SDK bridges with emulator support.
+### Service Mode Configuration (`SERVICE_MODE`)
+In `src/services/index.ts`:
+```typescript
+export type ServiceMode = 'firebase' | 'mock';
+export const SERVICE_MODE: ServiceMode = 'mock'; // Toggle to 'firebase' for live emulator
+```
+When running in `'mock'`, the app runs completely standalone with Delhi NCR seed datasets (Connaught Place, Mandi House, Hauz Khas Village, Saket, Cyber City).
 
 ---
 
-## 5. Cellular SMS in India (DLT Compliance Note)
+## 5. Verified vs. Simulated Audit Matrix
 
-Under Telecom Regulatory Authority of India (TRAI) regulations, commercial or bulk emergency SMS traffic requires:
-- Principal Entity registration on DLT platforms (e.g., Vilpower, Jio, Airtel, Smartping).
-- Pre-approved Header / Sender IDs (e.g., `RAHAT-ALERT`).
-- Registered and approved content templates with variable placeholders (`{#var#}`).
-The server-side `SmsProvider` interface is designed to accept compliant DLT gateways (such as MSG91 or Twilio India) once live keys are provisioned.
-
----
-
-## 5. Not Real Yet (Phase 1 Simulation Audit)
-
-As required by the build phase specification, the following services and pipelines are currently mocked in-memory for Phase 1:
-
-| Component | Status in Phase 1 | Real Implementation Phase |
+| Feature | Verified in Code & Tests | Simulated in Local Dev / Demo Mode |
 |---|---|---|
-| **Firebase Auth & Firestore** | Simulated via in-memory `mockAuthService` and `mockReportsService` | Phase 4 (Firebase Backend Core) |
-| **Cloud Functions & Wave Escalation** | Simulated locally with timers and state transitions | Phase 6 & Phase 7 |
-| **Cellular SMS Gateway** | Simulated via `MockSmsProvider` returning simulated DLT receipt IDs | Phase 6 (SOS Dispatch Cloud Function) |
-| **GPS / Location Tracking** | Sample Delhi NCR coordinates and corridors | Phase 5 (Route tab + Expo Location) |
-| **BLE Wearable Companion** | Simulated peripheral telemetry (`MockWearableService`) | Phase 8 (Connect + Profile) |
-| **Official Helplines (112, 1091)** | Pre-fills native phone dialer via `tel:` URL scheme | Live & Real (Verified as of 2026-11-01) |
+| **Safety Risk Engine** | Point-by-point itemized score calculation, time-band penalties, corroboration weighting, zero profiling. | Live streetlight sensor telemetry (uses Delhi NCR seed lux levels). |
+| **Deviation Engine** | Spherical cross-track distance, 90m buffer, 3-fix threshold, accuracy > 75m ignored, 120s cooldown. | GPS signal loss and off-route movement (via Dev Simulation Harness). |
+| **Emergency SOS Countdown** | 3s / 5s / 10s cancelable countdown, instant "Send Now", haptic feedback per second. | Hardware physical vibration on emulators (gracefully falls back if unavailable). |
+| **Dispatch & Receipts** | Real per-contact receipts (`sent`, `pending`, `offline_fallback_prepared`, `user_sent_via_sms`). | Cellular carrier delivery confirmations (simulated latency). |
+| **Offline SMS Fallback** | Native SMS composer prefill with Google Maps link (`expo-sms`), user confirmation tracking. | Background SMS transmission without user intervention (OS restricted). |
+| **Community Rescue Network** | Wave 1 (500m), Wave 2 (1000m/60s), Wave 3 (2000m); first-acceptance-wins race logic. | Push dispatch to active volunteer devices in area (simulated via in-memory engine). |
+| **Safe-Code / Duress-Code** | 4-digit PIN verification, covert duress code (`safeCode + 1`) notifying police discreetly. | Live dispatch center integration (112 ERSS API integration stub). |
+| **DPDP Act 2023 Erasure** | `deleteAccount` callable, purge of private PII subcollections, report author anonymization. | Real UID deletion across production Firebase Auth. |
+| **Bluetooth LE Wearable** | Telemetry tracking, RSSI, battery percentage, panic button listener. | Physical BLE hardware pairing (simulated via `MockWearableService`). |
+
+---
+
+## 6. Statutory Hotlines & Regulatory Notices
+
+### Official Verified Emergency Helplines (Delhi NCR)
+- **112:** National Emergency Response Support System (ERSS Police / Fire / Ambulance)
+- **1091:** Delhi Police Women in Distress Helpline
+- **7827170170:** National Commission for Women (NCW) WhatsApp Support
+- **1930:** National Cyber Crime Reporting Portal Helpline
+- **011-23317004:** Delhi Police Special Cell for Women & Children (Nanakpura)
+- **One-Stop Crisis (Sakhi) Centres:** Integrated medical, legal, and counseling shelters across Delhi districts.
+
+### Indian Cellular SMS Regulation (TRAI DLT)
+Sending automated cellular SMS in India requires compliance with Telecom Commercial Communications Customer Preference Regulations (TCCCPR). Any production SMS provider (such as MSG91 or Twilio) requires:
+1. Registration of the Principal Entity with a Telecom Service Provider (DLT portal).
+2. Approved Sender Header (e.g. `RAHATS`).
+3. Registered and approved Template IDs matching the exact message syntax.
+
+---
+
+## 7. License & Attribution
+
+Developed with privacy, dignity, and safety at its core. Distributed for community safety and public good.

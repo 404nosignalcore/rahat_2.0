@@ -2,6 +2,7 @@ import { CreateReportInput, IReportsService } from '../interfaces';
 import { SafetyReport } from '../../types/safety';
 
 export class MockReportsService implements IReportsService {
+  private userReportTimestamps: number[] = [];
   private reports: SafetyReport[] = [
     {
       id: 'rep_cp_01',
@@ -82,11 +83,20 @@ export class MockReportsService implements IReportsService {
   }
 
   async createReport(input: CreateReportInput): Promise<SafetyReport> {
+    // Rate limit check: Maximum 5 reports per hour (Section 7.2)
+    const now = Date.now();
+    this.userReportTimestamps = this.userReportTimestamps.filter((t) => now - t < 3600000);
+    if (this.userReportTimestamps.length >= 5) {
+      throw new Error('Rate limit exceeded: You may only submit up to 5 safety reports per hour.');
+    }
+
     // Moderation check: block phone numbers or personal PII
     const piiRegex = /(\+91[\-\s]?)?[6789]\d{9}/g;
     if (piiRegex.test(input.description) || piiRegex.test(input.title)) {
       throw new Error('Safety reports cannot contain phone numbers or private identifying details.');
     }
+
+    this.userReportTimestamps.push(now);
 
     const newReport: SafetyReport = {
       id: `rep_${Date.now()}`,
