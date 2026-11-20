@@ -62,7 +62,7 @@ rahat/
 npm run type-check
 ```
 
-### Running Unit Tests (70 tests across 7 suites)
+### Running Unit Tests (87 tests across 8 suites)
 ```bash
 npm test
 ```
@@ -74,7 +74,7 @@ npm start
 
 ---
 
-## 4. Phase 2 & 3 Delivery Highlights
+## 4. Phase 2, 3 & 4 Delivery Highlights
 
 1. **`src/utils/geo.ts`**:
    - Spherical Haversine distance with antimeridian crossing safety.
@@ -94,14 +94,17 @@ npm start
    - Resets counter immediately upon return within the 90m buffer.
    - Active cooldown suppresses alert while maintaining counter so it immediately re-fires if user stays off route after cooldown.
    - Invariant: Never automatically triggers an SOS or calls police (action is strictly `'prompt_safety_check'` or `'none'`).
-4. **Phase 3 SafeZone & Reports**:
+4. **Phase 3 SafeZone & Moderated Reports**:
    - Delhi NCR monitored zone corridors (`DELHI_NCR_ZONES`: Connaught Place, Mandi House, Hauz Khas, Saket, Gurgaon Cyber City).
    - Dynamic 24-hour time slider driving live zone scores.
    - Full point-by-point explainability modal (`ZoneExplanationModal`).
    - Hazard creation modal (`CreateReportModal`) with category picker, 1–5 severity rating, and privacy PII regex moderation guard.
    - Verification status transitions: flips to `community_corroborated` at $\ge 3$ distinct user confirmations; flags auto-transition to `under_review` at $\ge 3$ flags, and auto-hide at $\ge 5$ flags.
    - Threaded comments discussion and corroborations counter.
-   - Dual-mode reports service: `MockReportsService` (in-memory) and `FirebaseReportsService` (Firestore ready).
+5. **Phase 4 Backend Core & Firestore Security Invariants**:
+   - `firestore.rules`: Rigorous rules covering public/private user segregation, emergency contact unverified constraints, report creation requirements, single-user corroboration/flagging, alert immutability past countdown, circle location sharing consents, and default deny.
+   - `firebase.json` & `firestore.indexes.json`: Emulator configuration (Firestore 8080, Auth 9099, Functions 5001, UI 4000) and compound query indexes.
+   - `FirebaseAuthService` & `FirebaseReportsService`: Direct SDK bridges with emulator support.
 
 ---
 

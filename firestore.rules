@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+
+    function isValidCategory(cat) {
+      return cat in [
+        'harassment',
+        'stalking',
+        'verbal_abuse',
+        'physical_assault',
+        'poor_lighting',
+        'secluded_area',
+        'unsafe_transport',
+        'suspicious_activity'
+      ];
+    }
+
+    function isValidSeverity(sev) {
+      return sev is int && sev >= 1 && sev <= 5;
+    }
+
+    // 1. Users Collection
+    // Public profile: read for signed-in users; write only by owner
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(uid);
+
+      // Private PII: strictly owner only
+      match /private/info {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Emergency Contacts: owner only. Clients can never self-verify!
+      match /emergency_contacts/{contactId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid) &&
+          request.resource.data.verificationStatus == 'unverified';
+        allow update: if isOwner(uid) &&
+          (!('verificationStatus' in request.resource.data) ||
+           request.resource.data.verificationStatus == resource.data.verificationStatus ||
+           request.resource.data.verificationStatus != 'verified');
+      }
+    }
+
+    // 2. Safety Reports Collection
+    match /safety_reports/{reportId} {
+      // Public read of non-hidden reports (or admin/verifier)
+      allow read: if resource.data.hidden == false || hasRole('verifier') || hasRole('admin');
+
+      // Create: signed-in, authorUid matches auth, valid category, length checks, severity, unverified status
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.authorUid &&
+        isValidCategory(request.resource.data.category) &&
+        isValidSeverity(request.resource.data.severity) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() <= 120 &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() <= 1000 &&
+        request.resource.data.verificationStatus == 'unverified' &&
+        request.resource.data.corroborationCount == 0 &&
+        request.resource.data.flagCount == 0 &&
+        request.resource.data.hidden == false;
+
+      // Update: client cannot set authorized_verified or community_corroborated
+      allow update: if hasRole('verifier') || hasRole('admin') ||
+        (isOwner(resource.data.authorUid) &&
+         request.resource.data.verificationStatus == resource.data.verificationStatus);
+
+      // Corroborations: one document per user, own UID only (prevents double-confirming)
+      match /corroborations/{userId} {
+        allow read: if isSignedIn();
+        allow create, delete: if isOwner(userId);
+      }
+
+      // Flags: one document per user
+      match /flags/{userId} {
+        allow create: if isOwner(userId);
+      }
+
+      // Threaded Comments
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          request.auth.uid == request.resource.data.authorUid &&
+          request.resource.data.body is string &&
+          request.resource.data.body.size() <= 500;
+      }
+    }
+
+    // 3. Journeys
+    match /journeys/{journeyId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && isOwner(resource.data.userId);
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.userId) ||
+        ('circleId' in resource.data &&
+         exists(/databases/$(database)/documents/safe_circles/$(resource.data.circleId)/members/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/safe_circles/$(resource.data.circleId)/members/$(resource.data.userId)).data.shareLocation == true)
+      );
+    }
+
+    // 4. Emergency Alerts
+    match /emergency_alerts/{alertId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.userId) ||
+        resource.data.communityRescue == true
+      );
+      // Alerts CANNOT be edited after leaving countdown!
+      allow update: if isOwner(resource.data.userId) &&
+        resource.data.status == 'countdown';
+    }
+
+    // 5. Safe Circles & Member Consents
+    match /safe_circles/{circleId} {
+      allow read: if isSignedIn() && (
+        isOwner(resource.data.ownerUid) ||
+        exists(/databases/$(database)/documents/safe_circles/$(circleId)/members/$(request.auth.uid))
+      );
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isOwner(resource.data.ownerUid);
+
+      match /members/{memberUid} {
+        allow read: if isSignedIn();
+        allow create, update: if isOwner(memberUid) ||
+          isOwner(get(/databases/$(database)/documents/safe_circles/$(circleId)).data.ownerUid);
+        allow delete: if isOwner(memberUid) ||
+          isOwner(get(/databases/$(database)/documents/safe_circles/$(circleId)).data.ownerUid);
+      }
+    }
+
+    // 6. Responders
+    match /responders/{uid} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(uid) &&
+        (!('verificationStatus' in request.resource.data) ||
+         request.resource.data.verificationStatus == resource.data.verificationStatus ||
+         request.resource.data.verificationStatus != 'verified');
+    }
+
+    // 7. Community SOS
+    match /community_sos/{sosId} {
+      allow read: if isSignedIn() && (
+        resource.data.victimUid == request.auth.uid ||
+        resource.data.status == 'searching' ||
+        resource.data.acceptedBy == request.auth.uid
+      );
+      allow write: if hasRole('admin');
+
+      match /responses/{responderUid} {
+        allow read: if isSignedIn();
+        allow create, update: if isOwner(responderUid);
+      }
+    }
+
+    // 8. Safe Havens (Public Verified Registry)
+    match /safe_havens/{havenId} {
+      allow read: if true;
+      allow write: if hasRole('admin');
+    }
+
+    // 9. Safety Forum Posts
+    match /forum_posts/{postId} {
+      allow read: if resource.data.hidden == false || hasRole('admin');
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.authorUid &&
+        request.resource.data.body is string &&
+        request.resource.data.body.size() <= 1000;
+      allow update: if isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes']);
+    }
+
+    // 10. User Blocks
+    match /blocks/{uid}/blocked/{blockedUid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Default Deny Everything Else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
