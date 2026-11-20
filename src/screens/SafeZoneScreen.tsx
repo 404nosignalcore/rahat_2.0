@@ -6,42 +6,57 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { CreateReportModal } from '../components/CreateReportModal';
+import { ReportDetailModal } from '../components/ReportDetailModal';
+import { SafeZoneMap } from '../components/SafeZoneMap';
+import { TimeSlider } from '../components/TimeSlider';
+import { ZoneExplanationModal } from '../components/ZoneExplanationModal';
+import { ZoneLegend } from '../components/ZoneLegend';
 import { useReports } from '../context/ReportsProvider';
+import { DELHI_NCR_ZONES, DelhiZone } from '../data/delhiZones';
+import { calculateDynamicZoneScore } from '../engines/safetyRiskEngine';
 import { useI18n } from '../i18n';
 import { useTheme } from '../theme';
+import { SafetyReport } from '../types/safety';
 
 export const SafeZoneScreen: React.FC = () => {
   const { colors, typography, rounded, spacing, accessibility } = useTheme();
-  const { t } = useI18n();
-  const { reports, corroborateReport, flagReport } = useReports();
-  const [selectedHour, setSelectedHour] = useState<number>(20); // 8:00 PM evening default
+  const { t, language } = useI18n();
+  const { reports, createReport, corroborateReport, flagReport } = useReports();
 
-  // Calculate dynamic time band modifier
-  let timeBandLabel = 'Evening (18:00–23:00) −12 pts';
-  let timeDelta = -12;
-  if (selectedHour >= 8 && selectedHour < 18) {
-    timeBandLabel = 'Day (08:00–18:00) +5 pts';
-    timeDelta = 5;
-  } else if (selectedHour >= 23 || selectedHour < 5) {
-    timeBandLabel = 'Night (23:00–05:00) −25 pts';
-    timeDelta = -25;
-  } else if (selectedHour >= 5 && selectedHour < 8) {
-    timeBandLabel = 'Early Morning (05:00–08:00) −5 pts';
-    timeDelta = -5;
-  }
+  const [selectedZone, setSelectedZone] = useState<DelhiZone>(DELHI_NCR_ZONES[0]!);
+  const [selectedHour, setSelectedHour] = useState<number>(20); // 8:00 PM default
+  const [isExplanationVisible, setIsExplanationVisible] = useState<boolean>(false);
+  const [isCreateModalVisible, setIsCreateModalVisible] = useState<boolean>(false);
+  const [selectedReport, setSelectedReport] = useState<SafetyReport | null>(null);
 
-  // Base score 82 for Connaught Place / Janpath corridor
-  const dynamicScore = Math.max(5, Math.min(98, 82 + timeDelta));
+  // Filter incidents matching selected zone
+  const zoneIncidents = reports.filter((r) =>
+    r.areaTag.toLowerCase().includes(selectedZone.areaTag.toLowerCase())
+  );
+
+  const scoreResult = calculateDynamicZoneScore({
+    lightingPercent: selectedZone.lightingPercent,
+    cctvPercent: selectedZone.cctvPercent,
+    footfallPercent: selectedZone.footfallPercent,
+    hour: selectedHour,
+    incidents: zoneIncidents.map((r) => ({
+      category: r.category,
+      severity: r.severity,
+      verificationStatus: r.verificationStatus,
+    })),
+    safeHavensCount: selectedZone.safeHavensCount,
+  });
 
   let scoreColor = colors.safetySafe;
   let scoreBadge = t.safetyLevels.safe;
   let scoreBg = colors.safetySafeBackground;
 
-  if (dynamicScore < 45) {
+  if (scoreResult.level === 'danger') {
     scoreColor = colors.safetyDanger;
     scoreBadge = t.safetyLevels.danger;
     scoreBg = colors.safetyDangerBackground;
-  } else if (dynamicScore < 75) {
+  } else if (scoreResult.level === 'caution') {
     scoreColor = colors.safetyCaution;
     scoreBadge = t.safetyLevels.caution;
     scoreBg = colors.safetyCautionBackground;
@@ -49,7 +64,7 @@ export const SafeZoneScreen: React.FC = () => {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.canvasParchment }]}>
-      {/* Active Zone Card */}
+      {/* Active Zone Score Hero Card */}
       <View
         style={[
           styles.zoneCard,
@@ -62,90 +77,131 @@ export const SafeZoneScreen: React.FC = () => {
           },
         ]}
       >
-        <Text style={[styles.zoneTitle, { color: colors.ink, ...typography.tagline }]}>
-          Connaught Place & Janpath Corridor
-        </Text>
-        <Text style={[styles.zoneSubtitle, { color: colors.inkMuted80, ...typography.caption }]}>
-          Central Delhi Beat · Geohash: ttnfuh · Monitored Sector
-        </Text>
+        <View style={styles.zoneHeader}>
+          <View style={styles.zoneTitleWrap}>
+            <Text style={[styles.zoneTitle, { color: colors.ink, ...typography.tagline }]}>
+              {language === 'hi' ? selectedZone.nameHindi : selectedZone.name}
+            </Text>
+            <Text style={[styles.zoneSubtitle, { color: colors.inkMuted80, ...typography.caption }]}>
+              {selectedZone.areaTag} · Geohash: {selectedZone.geohash}
+            </Text>
+          </View>
 
-        {/* Dynamic Score Display */}
-        <View style={styles.scoreRow}>
-          <View style={[styles.scoreBadge, { backgroundColor: scoreBg, borderRadius: rounded.pill }]}>
+          {/* Tap to inspect explanation button */}
+          <TouchableOpacity
+            style={[
+              styles.explainBtn,
+              {
+                backgroundColor: colors.surfacePearl,
+                borderColor: colors.hairline,
+                borderRadius: rounded.pill,
+                minHeight: accessibility.minTouchTarget,
+                paddingHorizontal: spacing.sm,
+              },
+            ]}
+            onPress={() => setIsExplanationVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="View point-by-point score explanation"
+          >
+            <Text style={[styles.explainBtnText, { color: colors.primary, ...typography.captionStrong }]}>
+              Why {scoreResult.score}? ℹ️
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Dynamic Score Display Row */}
+        <TouchableOpacity
+          style={[styles.scoreRow, { marginTop: spacing.xs }]}
+          onPress={() => setIsExplanationVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Dynamic score ${scoreResult.score}. Level ${scoreBadge}. Tap for breakdown.`}
+        >
+          <View style={[styles.scoreBadge, { backgroundColor: scoreBg, borderColor: scoreColor, borderRadius: rounded.pill }]}>
             <Text style={[styles.scoreValue, { color: scoreColor, ...typography.displayLg }]}>
-              {dynamicScore}
+              {scoreResult.score}
             </Text>
             <Text style={[styles.scoreStatus, { color: scoreColor, ...typography.captionStrong }]}>
               {scoreBadge}
             </Text>
           </View>
 
-          <View style={styles.scoreExplainWrap}>
-            <Text style={[styles.explainHeader, { color: colors.ink, ...typography.captionStrong }]}>
-              Score Calculation:
+          <View style={styles.scoreSummaryWrap}>
+            <Text style={[styles.scoreSummaryTitle, { color: colors.ink, ...typography.bodyStrong }]}>
+              Dynamic Risk Score (Scale 5–98)
             </Text>
-            <Text style={[styles.explainItem, { color: colors.inkMuted80, ...typography.finePrint }]}>
-              • Base Infrastructure (Lighting 92%, CCTV 85%): +82
+            <Text style={[styles.scoreSummaryDesc, { color: colors.inkMuted80, ...typography.finePrint, marginTop: 2 }]}>
+              • Lighting: {selectedZone.lightingPercent}% · CCTV: {selectedZone.cctvPercent}%
             </Text>
-            <Text style={[styles.explainItem, { color: colors.inkMuted80, ...typography.finePrint }]}>
-              • Time of Day ({timeBandLabel}): {timeDelta > 0 ? `+${timeDelta}` : timeDelta}
+            <Text style={[styles.scoreSummaryDesc, { color: colors.inkMuted80, ...typography.finePrint }]}>
+              • Safe Havens: {selectedZone.safeHavensCount} verified points
             </Text>
-            <Text style={[styles.explainItem, { color: colors.inkMuted80, ...typography.finePrint }]}>
-              • Safe Havens: 4 verified points within 400m
+            <Text style={[styles.tapHint, { color: colors.primary, ...typography.microLegal, marginTop: 4 }]}>
+              Tap score for complete itemized breakdown →
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
+      </View>
 
-        {/* 24-Hour Time Slider Simulation */}
-        <View style={[styles.timeSliderContainer, { marginTop: spacing.md }]}>
-          <Text style={[styles.timeSliderLabel, { color: colors.ink, ...typography.captionStrong }]}>
-            Simulate Time of Day: {String(selectedHour).padStart(2, '0')}:00 hrs
-          </Text>
-          <View style={styles.timeButtonsRow}>
-            {[8, 14, 19, 23, 2, 6].map((hour) => (
-              <TouchableOpacity
-                key={hour}
-                style={[
-                  styles.hourPill,
-                  {
-                    backgroundColor: selectedHour === hour ? colors.primary : colors.surfacePearl,
-                    borderRadius: rounded.pill,
-                    minHeight: accessibility.minTouchTarget,
-                    paddingHorizontal: spacing.sm,
-                  },
-                ]}
-                onPress={() => setSelectedHour(hour)}
-                accessibilityRole="button"
-                accessibilityLabel={`Set simulated time to ${hour} hours`}
-              >
-                <Text
-                  style={[
-                    styles.hourPillText,
-                    {
-                      color: selectedHour === hour ? colors.onPrimary : colors.ink,
-                      ...typography.finePrint,
-                    },
-                  ]}
-                >
-                  {String(hour).padStart(2, '0')}:00
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+      {/* 24-Hour Time Slider */}
+      <View style={{ marginHorizontal: spacing.md, marginBottom: spacing.sm }}>
+        <TimeSlider
+          selectedHour={selectedHour}
+          onHourChange={setSelectedHour}
+          lightingPercent={selectedZone.lightingPercent}
+          footfallPercent={selectedZone.footfallPercent}
+        />
+      </View>
+
+      {/* Delhi NCR Zone Map Polygons */}
+      <View style={{ marginHorizontal: spacing.md, marginBottom: spacing.sm }}>
+        <SafeZoneMap
+          selectedZoneId={selectedZone.id}
+          selectedHour={selectedHour}
+          reports={reports}
+          onSelectZone={(z) => setSelectedZone(z)}
+        />
+      </View>
+
+      {/* Accessible Score Legend */}
+      <View style={{ marginHorizontal: spacing.md, marginBottom: spacing.md }}>
+        <ZoneLegend />
       </View>
 
       {/* Community Hazard Reports Feed */}
       <View style={[styles.reportsSection, { paddingHorizontal: spacing.md }]}>
-        <Text style={[styles.sectionTitle, { color: colors.ink, ...typography.tagline, marginBottom: spacing.sm }]}>
-          Community Safety Reports ({reports.length})
-        </Text>
-        <Text style={[styles.unverifiedNotice, { color: colors.inkMuted48, ...typography.finePrint, marginBottom: spacing.md }]}>
-          Notice: Unverified community reports carry a 0.5x score penalty. Reports corroborated by ≥ 3 users carry full weight.
-        </Text>
+        <View style={styles.sectionHeaderRow}>
+          <View>
+            <Text style={[styles.sectionTitle, { color: colors.ink, ...typography.tagline }]}>
+              Community Reports ({reports.length})
+            </Text>
+            <Text style={[styles.unverifiedNotice, { color: colors.inkMuted48, ...typography.finePrint, marginTop: 2 }]}>
+              Unverified: 0.5x weight · Corroborated (≥3): full weight
+            </Text>
+          </View>
+
+          {/* Report Hazard Action Button */}
+          <TouchableOpacity
+            style={[
+              styles.reportNewBtn,
+              {
+                backgroundColor: colors.primary,
+                borderRadius: rounded.pill,
+                minHeight: accessibility.minTouchTarget,
+                paddingHorizontal: spacing.md,
+              },
+            ]}
+            onPress={() => setIsCreateModalVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Report new safety hazard"
+          >
+            <Text style={[styles.reportNewText, { color: colors.onPrimary, ...typography.captionStrong }]}>
+              + Report Hazard
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {reports.map((report) => (
-          <View
+          <TouchableOpacity
             key={report.id}
             style={[
               styles.reportItem,
@@ -154,9 +210,12 @@ export const SafeZoneScreen: React.FC = () => {
                 borderColor: colors.hairline,
                 borderRadius: rounded.lg,
                 padding: spacing.md,
-                marginBottom: spacing.sm,
+                marginTop: spacing.sm,
               },
             ]}
+            onPress={() => setSelectedReport(report)}
+            accessibilityRole="button"
+            accessibilityLabel={`Inspect report ${report.title}`}
           >
             <View style={styles.reportHeader}>
               <View
@@ -166,7 +225,7 @@ export const SafeZoneScreen: React.FC = () => {
                     backgroundColor:
                       report.severity >= 4 ? colors.safetyDangerBackground : colors.surfacePearl,
                     borderRadius: rounded.sm,
-                    paddingHorizontal: 6,
+                    paddingHorizontal: 8,
                     paddingVertical: 2,
                   },
                 ]}
@@ -192,39 +251,39 @@ export const SafeZoneScreen: React.FC = () => {
             <Text style={[styles.reportTitle, { color: colors.ink, ...typography.bodyStrong, marginTop: 6 }]}>
               {report.title}
             </Text>
-            <Text style={[styles.reportDesc, { color: colors.inkMuted80, ...typography.caption, marginTop: 4 }]}>
+            <Text style={[styles.reportDesc, { color: colors.inkMuted80, ...typography.caption, marginTop: 4 }]} numberOfLines={2}>
               {report.description}
             </Text>
 
-            {/* Action buttons */}
-            <View style={[styles.reportActions, { marginTop: spacing.sm }]}>
+            {/* Quick action bar */}
+            <View style={[styles.reportQuickRow, { marginTop: spacing.sm }]}>
               <TouchableOpacity
                 style={[
-                  styles.actionButton,
+                  styles.quickActionBtn,
                   {
                     backgroundColor: colors.surfacePearl,
                     borderRadius: rounded.pill,
                     minHeight: accessibility.minTouchTarget,
-                    paddingHorizontal: spacing.md,
+                    paddingHorizontal: spacing.sm,
                   },
                 ]}
                 onPress={() => corroborateReport(report.id)}
                 accessibilityRole="button"
                 accessibilityLabel="Confirm I was here"
               >
-                <Text style={[styles.actionBtnText, { color: colors.primary, ...typography.captionStrong }]}>
+                <Text style={[styles.quickActionText, { color: colors.primary, ...typography.captionStrong }]}>
                   ✓ I Was Here ({report.corroborationCount})
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
-                  styles.actionButton,
+                  styles.quickActionBtn,
                   {
                     backgroundColor: colors.surfacePearl,
                     borderRadius: rounded.pill,
                     minHeight: accessibility.minTouchTarget,
-                    paddingHorizontal: spacing.md,
+                    paddingHorizontal: spacing.sm,
                     marginLeft: spacing.xs,
                   },
                 ]}
@@ -232,14 +291,59 @@ export const SafeZoneScreen: React.FC = () => {
                 accessibilityRole="button"
                 accessibilityLabel="Flag report as outdated"
               >
-                <Text style={[styles.actionBtnText, { color: colors.inkMuted48, ...typography.caption }]}>
-                  Flag ({report.flagCount})
+                <Text style={[styles.quickActionText, { color: colors.inkMuted48, ...typography.caption }]}>
+                  Flag Outdated ({report.flagCount})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.quickActionBtn,
+                  {
+                    backgroundColor: colors.surfacePearl,
+                    borderRadius: rounded.pill,
+                    minHeight: accessibility.minTouchTarget,
+                    paddingHorizontal: spacing.sm,
+                    marginLeft: spacing.xs,
+                  },
+                ]}
+                onPress={() => setSelectedReport(report)}
+                accessibilityRole="button"
+                accessibilityLabel="Open discussion comments"
+              >
+                <Text style={[styles.quickActionText, { color: colors.inkMuted80, ...typography.caption }]}>
+                  💬 Details
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
+
+      {/* Modals */}
+      <ZoneExplanationModal
+        visible={isExplanationVisible}
+        zoneName={language === 'hi' ? selectedZone.nameHindi : selectedZone.name}
+        result={scoreResult}
+        onClose={() => setIsExplanationVisible(false)}
+      />
+
+      <CreateReportModal
+        visible={isCreateModalVisible}
+        defaultLocation={selectedZone.center}
+        defaultAreaTag={selectedZone.areaTag}
+        onClose={() => setIsCreateModalVisible(false)}
+        onSubmit={createReport}
+      />
+
+      <ReportDetailModal
+        visible={Boolean(selectedReport)}
+        report={selectedReport}
+        onClose={() => setSelectedReport(null)}
+        onCorroborate={corroborateReport}
+        onFlag={flagReport}
+        onAddComment={async () => {}}
+      />
     </ScrollView>
   );
 };
@@ -251,12 +355,25 @@ const styles = StyleSheet.create({
   zoneCard: {
     borderWidth: 1,
   },
-  zoneTitle: {
-    marginBottom: 2,
+  zoneHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
+  zoneTitleWrap: {
+    flex: 1,
+  },
+  zoneTitle: {},
   zoneSubtitle: {
-    marginBottom: 12,
+    marginTop: 2,
   },
+  explainBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  explainBtnText: {},
   scoreRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -266,53 +383,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    minWidth: 90,
+    minWidth: 100,
+    borderWidth: 1,
   },
   scoreValue: {
-    fontWeight: '700',
+    lineHeight: 46,
   },
   scoreStatus: {
-    marginTop: 2,
+    textTransform: 'uppercase',
   },
-  scoreExplainWrap: {
+  scoreSummaryWrap: {
     flex: 1,
     marginLeft: 14,
   },
-  explainHeader: {
-    marginBottom: 2,
-  },
-  explainItem: {
+  scoreSummaryTitle: {},
+  scoreSummaryDesc: {
     lineHeight: 16,
   },
-  timeSliderContainer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e0e0e0',
-    paddingTop: 12,
-  },
-  timeSliderLabel: {
-    marginBottom: 8,
-  },
-  timeButtonsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  hourPill: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hourPillText: {
+  tapHint: {
     fontWeight: '600',
   },
   reportsSection: {
-    paddingBottom: 40,
+    paddingBottom: 48,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   sectionTitle: {
     letterSpacing: -0.2,
   },
-  unverifiedNotice: {
-    lineHeight: 16,
+  unverifiedNotice: {},
+  reportNewBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  reportNewText: {},
   reportItem: {
     borderWidth: 1,
   },
@@ -321,15 +428,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  categoryPill: {
-    alignSelf: 'flex-start',
-  },
+  categoryPill: {},
   categoryText: {
-    fontWeight: '600',
+    fontWeight: '700',
     textTransform: 'uppercase',
   },
   badgeText: {
-    fontWeight: '600',
+    fontWeight: '700',
   },
   reportTitle: {
     lineHeight: 20,
@@ -337,15 +442,13 @@ const styles = StyleSheet.create({
   reportDesc: {
     lineHeight: 18,
   },
-  reportActions: {
+  reportQuickRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  actionButton: {
+  quickActionBtn: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionBtnText: {
-    textAlign: 'center',
-  },
+  quickActionText: {},
 });

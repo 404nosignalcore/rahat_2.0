@@ -1,5 +1,6 @@
 import { MockAuthService } from './mock/mockAuthService';
 import { MockReportsService } from './mock/mockReportsService';
+import { FirebaseReportsService } from './firebase/firebaseReportsService';
 import { MockJourneyService } from './mock/mockJourneyService';
 import { MockSosService } from './mock/mockSosService';
 import { MockCircleService } from './mock/mockCircleService';
@@ -25,11 +26,12 @@ import {
  * 'firebase' connects to Firebase Auth, Firestore, and Cloud Functions emulators or cloud backend.
  */
 export type ServiceMode = 'firebase' | 'mock';
-export const SERVICE_MODE: ServiceMode = 'mock';
+export const SERVICE_MODE: ServiceMode = 'mock' as ServiceMode;
 
 // Mock service singletons
 const mockAuth = new MockAuthService();
 const mockReports = new MockReportsService();
+const firebaseReports = new FirebaseReportsService(mockReports);
 const mockJourney = new MockJourneyService();
 const mockSos = new MockSosService();
 const mockCircle = new MockCircleService();
@@ -39,7 +41,8 @@ const mockWearable = new MockWearableService();
 const mockSms = new MockSmsProvider();
 
 export const authService: IAuthService = mockAuth;
-export const reportsService: IReportsService = mockReports;
+export const reportsService: IReportsService =
+  SERVICE_MODE === 'firebase' ? firebaseReports : mockReports;
 export const journeyService: IJourneyService = mockJourney;
 export const sosService: ISosService = mockSos;
 export const circleService: ICircleService = mockCircle;
