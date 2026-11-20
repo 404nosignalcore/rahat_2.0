@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
+  Alert,
   Linking,
   ScrollView,
   StyleSheet,
@@ -8,9 +9,18 @@ import {
   View,
 } from 'react-native';
 import { CountdownOption, useSOS } from '../context/SOSProvider';
+import { communitySosEngine } from '../engines/communitySosService';
 import { useI18n } from '../i18n';
+import { ResponderAlertModal } from '../modals/ResponderAlertModal';
+import { ResponderDashboardModal } from '../modals/ResponderDashboardModal';
+import { SafeCodeCancelModal } from '../modals/SafeCodeCancelModal';
 import { useTheme } from '../theme';
-import { CoordsSource, DeliveryStatus } from '../types/safety';
+import {
+  CommunitySosSession,
+  CoordsSource,
+  DeliveryStatus,
+  Responder,
+} from '../types/safety';
 
 export const SosScreen: React.FC = () => {
   const { colors, typography, rounded, spacing, shadows, accessibility } = useTheme();
@@ -30,6 +40,13 @@ export const SosScreen: React.FC = () => {
     triggerOfflineFallback,
     sendOfflineSmsToContacts,
   } = useSOS();
+
+  // Community Rescue Network State
+  const [activeSession, setActiveSession] = useState<CommunitySosSession | null>(null);
+  const [isResponderAlertVisible, setIsResponderAlertVisible] = useState<boolean>(false);
+  const [isResponderDashboardVisible, setIsResponderDashboardVisible] = useState<boolean>(false);
+  const [isSafeCodeModalVisible, setIsSafeCodeModalVisible] = useState<boolean>(false);
+  const [simulateRaceLost, setSimulateRaceLost] = useState<boolean>(false);
 
   const handleDial = (number: string) => {
     Linking.openURL(`tel:${number}`).catch(() => {});
@@ -66,6 +83,78 @@ export const SosScreen: React.FC = () => {
           text: colors.safetyDanger,
           label: 'FAILED',
         };
+    }
+  };
+
+  // Rescue Network Simulation Handlers
+  const handleSimulateIncomingAlert = () => {
+    const session: CommunitySosSession = {
+      id: `sim_session_${Date.now()}`,
+      alertId: activeAlert?.id || 'alert_delhi_101',
+      victimUid: 'user_pooja_cp',
+      victimFirstName: 'Pooja',
+      location: { latitude: 28.6328, longitude: 77.2197 },
+      wave: 1,
+      status: 'searching',
+      createdAt: Date.now(),
+    };
+    setActiveSession(session);
+    setSimulateRaceLost(false);
+    setIsResponderAlertVisible(true);
+  };
+
+  const handleAcceptMission = () => {
+    if (!activeSession) return;
+
+    const mockResponder: Responder = {
+      uid: 'resp_priya_01',
+      firstName: 'Priya',
+      onDuty: true,
+      geohash: 'ttnfu',
+      credentials: ['First Aid Certified', 'Self-Defense Coach'],
+      verificationStatus: 'verified',
+      updatedAt: Date.now(),
+    };
+
+    const res = communitySosEngine.attemptAcceptance(
+      activeSession,
+      mockResponder,
+      { latitude: 28.6301, longitude: 77.2252 }
+    );
+
+    if (res.success && res.session) {
+      setActiveSession(res.session);
+      setIsResponderAlertVisible(false);
+      setIsResponderDashboardVisible(true);
+    } else {
+      setSimulateRaceLost(true);
+    }
+  };
+
+  const handleDeclineMission = () => {
+    setIsResponderAlertVisible(false);
+    setSimulateRaceLost(false);
+  };
+
+  const handleSafeCodeSuccess = (isDuress: boolean) => {
+    setIsSafeCodeModalVisible(false);
+    if (isDuress) {
+      // Covert duress handling (Section 6 & 8.3)
+      Alert.alert(
+        'Alert Canceled',
+        'Your alert has been marked as resolved.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              cancelAlert();
+            },
+          },
+        ]
+      );
+    } else {
+      Alert.alert('Safe-Code Verified', 'Emergency broadcast canceled safely.');
+      cancelAlert();
     }
   };
 
@@ -237,12 +326,12 @@ export const SosScreen: React.FC = () => {
                     marginRight: 4,
                   },
                 ]}
-                onPress={cancelAlert}
+                onPress={() => setIsSafeCodeModalVisible(true)}
                 accessibilityRole="button"
-                accessibilityLabel="Cancel active SOS alert"
+                accessibilityLabel="Cancel active SOS alert with safe-code"
               >
                 <Text style={[styles.cancelActiveText, { color: colors.ink, ...typography.bodyStrong }]}>
-                  Cancel Alert
+                  Cancel with Safe-Code
                 </Text>
               </TouchableOpacity>
 
@@ -371,6 +460,145 @@ export const SosScreen: React.FC = () => {
         )}
       </View>
 
+      {/* Community First Responder Rescue Network (Section 6 & 8.3) */}
+      <View
+        style={[
+          styles.communityCard,
+          {
+            backgroundColor: colors.canvas,
+            borderColor: colors.hairline,
+            borderRadius: rounded.lg,
+            marginHorizontal: spacing.md,
+            marginBottom: spacing.md,
+            padding: spacing.md,
+          },
+        ]}
+      >
+        <Text style={[styles.communityTitle, { color: colors.ink, ...typography.tagline }]}>
+          {t.sos.communityRescueTitle}
+        </Text>
+        <Text style={[styles.communityDesc, { color: colors.inkMuted80, ...typography.caption, marginTop: 2 }]}>
+          Vetted volunteers within radius: campus guards, certified self-defense coaches, NGO volunteers.
+        </Text>
+
+        {/* Wave Expansion Info */}
+        <View style={[styles.wavesRow, { marginTop: spacing.sm }]}>
+          <Text style={[styles.waveItem, { color: colors.primary, ...typography.captionStrong }]}>
+            Wave 1: ≤ 500m
+          </Text>
+          <Text style={[styles.waveItem, { color: colors.inkMuted80, ...typography.caption }]}>
+            → Wave 2: 1000m (60s)
+          </Text>
+          <Text style={[styles.waveItem, { color: colors.inkMuted80, ...typography.caption }]}>
+            → Wave 3: 2000m
+          </Text>
+        </View>
+
+        {/* Victim View: Responder Assigned Card (Section 6 & 8.3) */}
+        {activeSession && activeSession.status === 'accepted' && activeSession.responderInfo && (
+          <View
+            style={[
+              styles.assignedResponderBox,
+              {
+                backgroundColor: colors.canvasParchment,
+                borderColor: colors.safetySafe,
+                borderWidth: 1,
+                borderRadius: rounded.md,
+                padding: spacing.sm,
+                marginTop: spacing.md,
+              },
+            ]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View>
+                {/* FIRST NAME ONLY per non-negotiables */}
+                <Text style={{ color: colors.ink, ...typography.bodyStrong }}>
+                  🛡️ {activeSession.responderInfo.firstName} is coming to help
+                </Text>
+                <Text style={{ color: colors.inkMuted80, ...typography.finePrint, marginTop: 2 }}>
+                  Credentials: {activeSession.responderInfo.credentials.join(' • ')}
+                </Text>
+                <Text style={{ color: colors.primary, ...typography.microLegal, marginTop: 2 }}>
+                  Distance: {activeSession.responderInfo.distanceMeters}m • Walking ETA ~{Math.round(activeSession.responderInfo.etaSeconds / 60)} min
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: rounded.pill,
+                }}
+                onPress={() => handleDial('112')}
+                accessibilityRole="button"
+                accessibilityLabel="Call responder coordinator"
+              >
+                <Text style={{ color: colors.onPrimary, ...typography.captionStrong }}>📞 Call</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Dev Rescue Network Simulation Controls */}
+        <View style={{ marginTop: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.dividerSoft, paddingTop: spacing.sm }}>
+          <Text style={{ color: colors.inkMuted48, ...typography.microLegal, marginBottom: 4 }}>
+            DEV / DEMO RESCUE NETWORK SIMULATOR
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <TouchableOpacity
+              style={{
+                backgroundColor: colors.surfacePearl,
+                borderColor: colors.hairline,
+                borderWidth: 1,
+                paddingHorizontal: 8,
+                paddingVertical: 6,
+                borderRadius: rounded.pill,
+                flex: 1,
+                alignItems: 'center',
+              }}
+              onPress={handleSimulateIncomingAlert}
+            >
+              <Text style={{ color: colors.ink, fontSize: 11, fontWeight: '600' }}>
+                Simulate Responder Alert
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                backgroundColor: colors.surfacePearl,
+                borderColor: colors.hairline,
+                borderWidth: 1,
+                paddingHorizontal: 8,
+                paddingVertical: 6,
+                borderRadius: rounded.pill,
+                flex: 1,
+                alignItems: 'center',
+              }}
+              onPress={() => {
+                const session: CommunitySosSession = {
+                  id: `race_${Date.now()}`,
+                  alertId: 'alert_delhi_101',
+                  victimUid: 'user_01',
+                  victimFirstName: 'Pooja',
+                  location: { latitude: 28.6328, longitude: 77.2197 },
+                  wave: 1,
+                  status: 'accepted',
+                  createdAt: Date.now(),
+                };
+                setActiveSession(session);
+                setSimulateRaceLost(true);
+                setIsResponderAlertVisible(true);
+              }}
+            >
+              <Text style={{ color: colors.ink, fontSize: 11, fontWeight: '600' }}>
+                Simulate Race Lost
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
       {/* Official Emergency Dialers (Prefills Dialer Directly - Never Auto-calls) */}
       <View style={[styles.dialerSection, { paddingHorizontal: spacing.md, marginBottom: spacing.md }]}>
         <Text style={[styles.dialerHeader, { color: colors.ink, ...typography.captionStrong, marginBottom: spacing.xs }]}>
@@ -431,7 +659,7 @@ export const SosScreen: React.FC = () => {
 
       {/* Per-Contact Delivery Status Audit (Truth in Dispatch) */}
       {isAlertActive && activeAlert && (
-        <View style={[styles.auditCard, { marginHorizontal: spacing.md, marginBottom: spacing.md }]}>
+        <View style={[styles.auditCard, { marginHorizontal: spacing.md, marginBottom: spacing.xxl }]}>
           <View
             style={[
               styles.auditBox,
@@ -546,39 +774,33 @@ export const SosScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Community First Responder Rescue Network */}
-      <View
-        style={[
-          styles.communityCard,
-          {
-            backgroundColor: colors.canvas,
-            borderColor: colors.hairline,
-            borderRadius: rounded.lg,
-            marginHorizontal: spacing.md,
-            marginBottom: spacing.xxl,
-            padding: spacing.md,
-          },
-        ]}
-      >
-        <Text style={[styles.communityTitle, { color: colors.ink, ...typography.tagline }]}>
-          {t.sos.communityRescueTitle}
-        </Text>
-        <Text style={[styles.communityDesc, { color: colors.inkMuted80, ...typography.caption, marginTop: 2 }]}>
-          Vetted volunteers within radius: campus guards, certified self-defense coaches, NGO volunteers.
-        </Text>
+      {/* Responder Modals */}
+      <ResponderAlertModal
+        visible={isResponderAlertVisible}
+        session={activeSession}
+        alreadyAccepted={simulateRaceLost}
+        onAccept={handleAcceptMission}
+        onDecline={handleDeclineMission}
+      />
 
-        <View style={[styles.wavesRow, { marginTop: spacing.sm }]}>
-          <Text style={[styles.waveItem, { color: colors.primary, ...typography.captionStrong }]}>
-            Wave 1: ≤ 500m
-          </Text>
-          <Text style={[styles.waveItem, { color: colors.inkMuted80, ...typography.caption }]}>
-            → Wave 2: 1000m (60s)
-          </Text>
-          <Text style={[styles.waveItem, { color: colors.inkMuted80, ...typography.caption }]}>
-            → Wave 3: 2000m
-          </Text>
-        </View>
-      </View>
+      <ResponderDashboardModal
+        visible={isResponderDashboardVisible}
+        session={activeSession}
+        onArrived={() => {
+          Alert.alert('Arrived on Scene', 'Victim notified of your arrival. Please stay in safe contact.');
+        }}
+        onClose={() => setIsResponderDashboardVisible(false)}
+        onReportSuspicious={() => {
+          Alert.alert('Report Registered', 'Incident logged with community safety coordinator.');
+          setIsResponderDashboardVisible(false);
+        }}
+      />
+
+      <SafeCodeCancelModal
+        visible={isSafeCodeModalVisible}
+        onCancelSuccess={handleSafeCodeSuccess}
+        onDismiss={() => setIsSafeCodeModalVisible(false)}
+      />
     </ScrollView>
   );
 };
@@ -688,6 +910,22 @@ const styles = StyleSheet.create({
   coordsWarningDesc: {
     lineHeight: 16,
   },
+  communityCard: {
+    borderWidth: 1,
+  },
+  communityTitle: {
+    marginBottom: 2,
+  },
+  communityDesc: {
+    lineHeight: 18,
+  },
+  wavesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  waveItem: {},
+  assignedResponderBox: {},
   dialerSection: {},
   dialerHeader: {
     textTransform: 'uppercase',
@@ -744,19 +982,4 @@ const styles = StyleSheet.create({
   offlineSimBtn: {
     width: '100%',
   },
-  communityCard: {
-    borderWidth: 1,
-  },
-  communityTitle: {
-    marginBottom: 2,
-  },
-  communityDesc: {
-    lineHeight: 18,
-  },
-  wavesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  waveItem: {},
 });
