@@ -1,0 +1,260 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Rahat Firestore Blueprint",
+  "description": "Firestore collection and document structure for the Rahat personal safety platform.",
+  "collections": {
+    "users": {
+      "path": "/users/{uid}",
+      "description": "Public profile of user. Readable by signed-in users.",
+      "fields": {
+        "displayName": { "type": "string", "maxLength": 80 },
+        "preferredLanguage": { "type": "string", "enum": ["en", "hi"] },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "subcollections": {
+        "private": {
+          "path": "/users/{uid}/private/info",
+          "description": "Sensitive PII. Strictly readable/writable by owner only.",
+          "fields": {
+            "email": { "type": "string" },
+            "phone": { "type": "string" },
+            "consents": {
+              "type": "object",
+              "properties": {
+                "dpdpAccepted": { "type": "boolean" },
+                "dpdpAcceptedAt": { "type": "timestamp" },
+                "foregroundLocation": { "type": "boolean" },
+                "backgroundLocation": { "type": "boolean" },
+                "deviationNotifications": { "type": "boolean" }
+              }
+            },
+            "sosCountdownSeconds": { "type": "number", "enum": [3, 5, 10] },
+            "fcmTokens": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "emergency_contacts": {
+          "path": "/users/{uid}/emergency_contacts/{id}",
+          "description": "Owner's emergency contacts list.",
+          "fields": {
+            "name": { "type": "string", "maxLength": 80 },
+            "relationship": { "type": "string" },
+            "phone": { "type": "string" },
+            "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified"] },
+            "notifyOnSOS": { "type": "boolean" },
+            "createdAt": { "type": "timestamp" }
+          }
+        }
+      }
+    },
+    "safety_reports": {
+      "path": "/safety_reports/{id}",
+      "description": "Community reported hazards and incidents. Publicly readable if not hidden.",
+      "fields": {
+        "authorUid": { "type": "string" },
+        "category": {
+          "type": "string",
+          "enum": [
+            "harassment",
+            "stalking",
+            "verbal_abuse",
+            "physical_assault",
+            "poor_lighting",
+            "secluded_area",
+            "unsafe_transport",
+            "suspicious_activity"
+          ]
+        },
+        "severity": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "title": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "location": {
+          "type": "geopoint",
+          "properties": {
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" }
+          }
+        },
+        "geohash": { "type": "string" },
+        "areaTag": { "type": "string" },
+        "verificationStatus": {
+          "type": "string",
+          "enum": ["unverified", "under_review", "community_corroborated", "authorized_verified"]
+        },
+        "corroborationCount": { "type": "integer", "default": 0 },
+        "flagCount": { "type": "integer", "default": 0 },
+        "hidden": { "type": "boolean", "default": false },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "subcollections": {
+        "corroborations": {
+          "path": "/safety_reports/{id}/corroborations/{uid}",
+          "fields": {
+            "uid": { "type": "string" },
+            "corroboratedAt": { "type": "timestamp" }
+          }
+        },
+        "flags": {
+          "path": "/safety_reports/{id}/flags/{uid}",
+          "fields": {
+            "uid": { "type": "string" },
+            "reason": { "type": "string" },
+            "flaggedAt": { "type": "timestamp" }
+          }
+        },
+        "comments": {
+          "path": "/safety_reports/{id}/comments/{commentId}",
+          "fields": {
+            "authorUid": { "type": "string" },
+            "body": { "type": "string", "maxLength": 500 },
+            "createdAt": { "type": "timestamp" }
+          }
+        }
+      }
+    },
+    "journeys": {
+      "path": "/journeys/{id}",
+      "description": "Active and past journeys of users. Owner and authorized circle members only.",
+      "fields": {
+        "userId": { "type": "string" },
+        "origin": { "type": "object" },
+        "destination": { "type": "object" },
+        "routePolyline": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed", "cancelled", "deviated"] },
+        "currentLocation": { "type": "object" },
+        "deviationState": { "type": "string", "enum": ["on_route", "deviated", "in_cooldown"] },
+        "startedAt": { "type": "timestamp" },
+        "endedAt": { "type": "timestamp" }
+      }
+    },
+    "safe_circles": {
+      "path": "/safe_circles/{id}",
+      "description": "Circles of family, friends, roommates.",
+      "fields": {
+        "ownerUid": { "type": "string" },
+        "name": { "type": "string" },
+        "sharingEnabled": { "type": "boolean" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "subcollections": {
+        "members": {
+          "path": "/safe_circles/{id}/members/{uid}",
+          "fields": {
+            "shareLocation": { "type": "boolean" },
+            "role": { "type": "string", "enum": ["owner", "admin", "member"] },
+            "joinedAt": { "type": "timestamp" }
+          }
+        }
+      }
+    },
+    "emergency_alerts": {
+      "path": "/emergency_alerts/{id}",
+      "description": "Triggered SOS alerts.",
+      "fields": {
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["countdown", "active", "resolved", "cancelled"] },
+        "location": { "type": "object" },
+        "coordsSource": { "type": "string", "enum": ["gps", "stale", "demo"] },
+        "source": { "type": "string", "enum": ["app", "wearable"] },
+        "contactDeliveries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "contactId": { "type": "string" },
+              "contactName": { "type": "string" },
+              "phone": { "type": "string" },
+              "channel": { "type": "string", "enum": ["push", "sms"] },
+              "status": {
+                "type": "string",
+                "enum": ["pending", "sent", "failed", "offline_fallback_prepared", "user_sent_via_sms"]
+              },
+              "detail": { "type": "string" },
+              "timestamp": { "type": "timestamp" }
+            }
+          }
+        },
+        "communityRescue": { "type": "boolean" },
+        "createdAt": { "type": "timestamp" },
+        "resolvedAt": { "type": "timestamp" }
+      }
+    },
+    "responders": {
+      "path": "/responders/{uid}",
+      "description": "Registered and vetted community responders.",
+      "fields": {
+        "onDuty": { "type": "boolean" },
+        "geohash": { "type": "string" },
+        "credentials": { "type": "array", "items": { "type": "string" } },
+        "verificationStatus": { "type": "string", "enum": ["pending", "verified", "suspended"] },
+        "fcmToken": { "type": "string" },
+        "updatedAt": { "type": "timestamp" }
+      }
+    },
+    "community_sos": {
+      "path": "/community_sos/{id}",
+      "description": "Active community rescue sessions with wave escalation.",
+      "fields": {
+        "alertId": { "type": "string" },
+        "victimUid": { "type": "string" },
+        "victimFirstName": { "type": "string" },
+        "wave": { "type": "integer", "enum": [1, 2, 3] },
+        "status": { "type": "string", "enum": ["searching", "accepted", "resolved", "cancelled"] },
+        "acceptedBy": { "type": "string" },
+        "createdAt": { "type": "timestamp" },
+        "expandedAt": { "type": "timestamp" }
+      },
+      "subcollections": {
+        "responses": {
+          "path": "/community_sos/{id}/responses/{uid}",
+          "fields": {
+            "decision": { "type": "string", "enum": ["accepted", "declined"] },
+            "etaSeconds": { "type": "number" },
+            "respondedAt": { "type": "timestamp" }
+          }
+        }
+      }
+    },
+    "safe_havens": {
+      "path": "/safe_havens/{id}",
+      "description": "Verified safe locations in Delhi NCR.",
+      "fields": {
+        "name": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["police_station", "pink_booth", "hospital_er", "pharmacy_24x7", "metro_help_desk", "sakhi_centre", "campus_security"]
+        },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "phone": { "type": "string" },
+        "open24x7": { "type": "boolean" },
+        "source": { "type": "string" },
+        "lastVerifiedAt": { "type": "string" }
+      }
+    },
+    "forum_posts": {
+      "path": "/forum_posts/{id}",
+      "description": "Corridor-level safety advice and updates.",
+      "fields": {
+        "areaTag": { "type": "string" },
+        "topic": {
+          "type": "string",
+          "enum": ["Area Updates", "Lighting Alerts", "Suspicious Activity", "Safe Tips"]
+        },
+        "body": { "type": "string", "maxLength": 1000 },
+        "authorUid": { "type": "string" },
+        "upvotes": { "type": "integer", "default": 0 },
+        "hidden": { "type": "boolean", "default": false },
+        "createdAt": { "type": "timestamp" }
+      }
+    },
+    "blocks": {
+      "path": "/blocks/{uid}/blocked/{blockedUid}",
+      "description": "User block lists.",
+      "fields": {
+        "blockedAt": { "type": "timestamp" }
+      }
+    }
+  }
+}

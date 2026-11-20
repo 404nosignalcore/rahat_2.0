@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Rahat",
+    "slug": "rahat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f5f5f7"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rahat.safety",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Rahat uses your location to display real-time safety scores and guide you along safe routes.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Rahat uses background location exclusively during an active journey to detect route deviations and alert your SafeCircle if needed.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#f5f5f7"
+      },
+      "package": "com.rahat.safety",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "rahat"
+  }
+}
