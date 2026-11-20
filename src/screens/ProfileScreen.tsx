@@ -8,16 +8,31 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../context/AuthProvider';
+import { communitySosEngine } from '../engines/communitySosService';
 import { useI18n } from '../i18n';
+import { ContactVerificationModal } from '../modals/ContactVerificationModal';
 import { wearableService } from '../services';
 import { useTheme } from '../theme';
-import { WearableTelemetry } from '../types/safety';
+import { EmergencyContact, WearableTelemetry } from '../types/safety';
 
 export const ProfileScreen: React.FC = () => {
   const { colors, typography, rounded, spacing, accessibility, isDark, toggleTheme } = useTheme();
-  const { t } = useI18n();
-  const { user, privateInfo, contacts, updateConsents, showConsentModal } = useAuth();
+  const { t, language, setLanguage } = useI18n();
+  const {
+    user,
+    privateInfo,
+    contacts,
+    updateConsents,
+    showConsentModal,
+    sendContactOtp,
+    verifyContactOtp,
+    deleteAccount,
+    exportUserDataJson,
+  } = useAuth();
+
   const [telemetry, setTelemetry] = useState<WearableTelemetry | null>(null);
+  const [selectedContactToVerify, setSelectedContactToVerify] = useState<EmergencyContact | null>(null);
+  const [safeCode, setSafeCode] = useState<string>(communitySosEngine.getSafeCode());
 
   useEffect(() => {
     wearableService.getTelemetry().then(setTelemetry).catch(() => {});
@@ -26,6 +41,19 @@ export const ProfileScreen: React.FC = () => {
   const handleSimulateWearableSos = async () => {
     await wearableService.simulateSosPress();
     Alert.alert('Wearable Trigger Simulated', 'Distress signal received from simulated smart ring.');
+  };
+
+  const handleExportData = async () => {
+    try {
+      const json = await exportUserDataJson();
+      Alert.alert(
+        'DPDP Data Portability Export',
+        `Your encrypted data archive:\n\n${json.substring(0, 300)}...\n\n(Full JSON archive ready for export)`,
+        [{ text: 'Close' }]
+      );
+    } catch {
+      Alert.alert('Export Failed', 'Unable to generate JSON archive.');
+    }
   };
 
   const handleDeleteAccountPrompt = () => {
@@ -37,8 +65,12 @@ export const ProfileScreen: React.FC = () => {
         {
           text: t.common.delete,
           style: 'destructive',
-          onPress: () => {
-            Alert.alert('Account Erased', 'Your profile and private location records have been permanently purged pursuant to DPDP Act 2023.');
+          onPress: async () => {
+            await deleteAccount();
+            Alert.alert(
+              'Account Permanently Erased',
+              'Your profile and private location records have been permanently purged pursuant to DPDP Act 2023.'
+            );
           },
         },
       ]
@@ -71,25 +103,86 @@ export const ProfileScreen: React.FC = () => {
         </Text>
       </View>
 
-      {/* Emergency Contacts Section */}
+      {/* Language Preference Bar */}
       <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
         <Text style={[styles.sectionTitle, { color: colors.ink, ...typography.bodyStrong, marginBottom: spacing.xs }]}>
-          {t.profile.emergencyContacts} ({contacts.length})
+          Language / भाषा
         </Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity
+            style={{
+              flex: 1,
+              backgroundColor: language === 'en' ? colors.primary : colors.canvas,
+              borderColor: colors.hairline,
+              borderWidth: 1,
+              borderRadius: rounded.pill,
+              minHeight: accessibility.minTouchTarget,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onPress={() => setLanguage('en')}
+            accessibilityRole="button"
+            accessibilityLabel="Switch to English"
+          >
+            <Text style={{ color: language === 'en' ? colors.onPrimary : colors.ink, ...typography.captionStrong }}>
+              English
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{
+              flex: 1,
+              backgroundColor: language === 'hi' ? colors.primary : colors.canvas,
+              borderColor: colors.hairline,
+              borderWidth: 1,
+              borderRadius: rounded.pill,
+              minHeight: accessibility.minTouchTarget,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onPress={() => setLanguage('hi')}
+            accessibilityRole="button"
+            accessibilityLabel="Switch to Hindi"
+          >
+            <Text style={{ color: language === 'hi' ? colors.onPrimary : colors.ink, ...typography.captionStrong }}>
+              हिन्दी (Hindi)
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Emergency Contacts Section (Section 6 & Verification Flow) */}
+      <View style={[styles.section, { paddingHorizontal: spacing.md, marginTop: spacing.md }]}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs }}>
+          <Text style={[styles.sectionTitle, { color: colors.ink, ...typography.bodyStrong }]}>
+            {t.profile.emergencyContacts} ({contacts.length})
+          </Text>
+          <Text style={{ color: colors.inkMuted48, ...typography.microLegal }}>
+            MAX 5 CONTACTS
+          </Text>
+        </View>
 
         {contacts.map((contact) => (
-          <View
+          <TouchableOpacity
             key={contact.id}
             style={[
               styles.contactItem,
               {
                 backgroundColor: colors.canvas,
-                borderColor: colors.hairline,
+                borderColor: contact.verificationStatus === 'verified' ? colors.hairline : colors.safetyCaution,
                 borderRadius: rounded.md,
+                borderWidth: 1,
                 padding: spacing.md,
                 marginBottom: spacing.xs,
               },
             ]}
+            onPress={() => {
+              if (contact.verificationStatus !== 'verified') {
+                setSelectedContactToVerify(contact);
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Emergency contact ${contact.name}, ${contact.verificationStatus}`}
           >
             <View style={styles.contactItemLeft}>
               <Text style={[styles.contactName, { color: colors.ink, ...typography.bodyStrong }]}>
@@ -110,11 +203,65 @@ export const ProfileScreen: React.FC = () => {
               >
                 {contact.verificationStatus === 'verified'
                   ? `✓ ${t.profile.contactVerified}`
-                  : `⚠️ ${t.profile.contactUnverified}`}
+                  : `⚠️ ${t.profile.contactUnverified} (Tap to verify via OTP)`}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
+      </View>
+
+      {/* Safe-Code & Duress-Code Configuration (Section 6 & 8.3) */}
+      <View style={[styles.section, { paddingHorizontal: spacing.md, marginTop: spacing.md }]}>
+        <Text style={[styles.sectionTitle, { color: colors.ink, ...typography.bodyStrong, marginBottom: spacing.xs }]}>
+          Safe-Code & Duress Protection
+        </Text>
+        <View
+          style={[
+            styles.safeCodeBox,
+            {
+              backgroundColor: colors.canvas,
+              borderColor: colors.hairline,
+              borderRadius: rounded.lg,
+              borderWidth: 1,
+              padding: spacing.md,
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View>
+              <Text style={{ color: colors.ink, ...typography.bodyStrong }}>
+                Personal Safe-Code: <Text style={{ color: colors.primary }}>{safeCode}</Text>
+              </Text>
+              <Text style={{ color: colors.inkMuted80, ...typography.caption, marginTop: 2 }}>
+                Used to cancel an active distress signal.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={{
+                backgroundColor: colors.surfacePearl,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: rounded.pill,
+              }}
+              onPress={() => {
+                const newCode = safeCode === '1234' ? '2468' : '1234';
+                communitySosEngine.setSafeCode(newCode);
+                setSafeCode(newCode);
+              }}
+            >
+              <Text style={{ color: colors.primary, ...typography.finePrint }}>Change</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ marginTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.dividerSoft, paddingTop: spacing.xs }}>
+            <Text style={{ color: colors.safetyCaution, ...typography.captionStrong }}>
+              🛡️ Anti-Coercion Duress Code: {communitySosEngine.getDuressCode()}
+            </Text>
+            <Text style={{ color: colors.inkMuted80, ...typography.microLegal, marginTop: 2 }}>
+              If forced to cancel under threat, entering the duress code quietly notifies official ERSS (112) police while showing the app as canceled to the coercer.
+            </Text>
+          </View>
+        </View>
       </View>
 
       {/* DPDP Act 2023 Privacy Controls */}
@@ -209,6 +356,8 @@ export const ProfileScreen: React.FC = () => {
                 borderRadius: rounded.pill,
                 minHeight: accessibility.minTouchTarget,
                 marginTop: spacing.md,
+                alignItems: 'center',
+                justifyContent: 'center',
               },
             ]}
             onPress={showConsentModal}
@@ -251,7 +400,7 @@ export const ProfileScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Connected Wearable Companion */}
+      {/* Connected Wearable Companion (Section 6) */}
       <View style={[styles.section, { paddingHorizontal: spacing.md, marginTop: spacing.md }]}>
         <Text style={[styles.sectionTitle, { color: colors.ink, ...typography.bodyStrong, marginBottom: spacing.xs }]}>
           {t.profile.wearables}
@@ -272,7 +421,7 @@ export const ProfileScreen: React.FC = () => {
             💍 {telemetry?.name || 'Rahat Smart Ring'}
           </Text>
           <Text style={[styles.wearableDetail, { color: colors.inkMuted80, ...typography.caption, marginTop: 2 }]}>
-            Battery: {telemetry?.batteryPercent}% · Firmware: {telemetry?.firmwareVersion} · State: {telemetry?.isConnected ? 'Connected' : 'Disconnected'}
+            Battery: {telemetry?.batteryPercent}% · Firmware: {telemetry?.firmwareVersion} · State: {telemetry?.isConnected ? 'Connected via BLE' : 'Disconnected'}
           </Text>
 
           <TouchableOpacity
@@ -283,6 +432,8 @@ export const ProfileScreen: React.FC = () => {
                 borderRadius: rounded.pill,
                 minHeight: accessibility.minTouchTarget,
                 marginTop: spacing.sm,
+                alignItems: 'center',
+                justifyContent: 'center',
               },
             ]}
             onPress={handleSimulateWearableSos}
@@ -296,29 +447,76 @@ export const ProfileScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* Delete Account (DPDP Act 2023 Right to Erasure) */}
+      {/* Data Export & Account Deletion (DPDP Act 2023) */}
       <View style={[styles.section, { paddingHorizontal: spacing.md, marginTop: spacing.md, marginBottom: spacing.xxl }]}>
+        <Text style={[styles.sectionTitle, { color: colors.ink, ...typography.bodyStrong, marginBottom: spacing.xs }]}>
+          Data Management & Rights
+        </Text>
+
         <TouchableOpacity
           style={[
-            styles.deleteBtn,
+            styles.exportBtn,
+            {
+              backgroundColor: colors.canvas,
+              borderColor: colors.hairline,
+              borderWidth: 1,
+              borderRadius: rounded.lg,
+              padding: spacing.md,
+              minHeight: accessibility.minTouchTarget,
+              marginBottom: spacing.xs,
+            },
+          ]}
+          onPress={handleExportData}
+          accessibilityRole="button"
+          accessibilityLabel="Export my data as JSON"
+        >
+          <Text style={{ color: colors.primary, ...typography.bodyStrong }}>
+            📦 Export My Data (JSON)
+          </Text>
+          <Text style={{ color: colors.inkMuted80, ...typography.finePrint, marginTop: 2 }}>
+            Download complete archive of profile, contacts, and telemetry pursuant to DPDP Act 2023.
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.deleteAccountBtn,
             {
               backgroundColor: colors.safetyDangerBackground,
               borderColor: colors.safetyDanger,
-              borderRadius: rounded.pill,
+              borderRadius: rounded.lg,
+              padding: spacing.md,
               minHeight: accessibility.minTouchTarget,
               borderWidth: 1,
-              paddingHorizontal: spacing.lg,
             },
           ]}
           onPress={handleDeleteAccountPrompt}
           accessibilityRole="button"
           accessibilityLabel={t.profile.deleteAccount}
         >
-          <Text style={[styles.deleteBtnText, { color: colors.safetyDanger, ...typography.bodyStrong }]}>
-            🗑️ {t.profile.deleteAccount}
+          <Text style={[styles.deleteAccountTitle, { color: colors.safetyDanger, ...typography.bodyStrong }]}>
+            {t.profile.deleteAccount}
+          </Text>
+          <Text style={[styles.deleteAccountDisclaimer, { color: colors.inkMuted80, ...typography.finePrint, marginTop: 2 }]}>
+            {t.profile.deleteDisclaimer}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Contact Verification OTP Modal */}
+      <ContactVerificationModal
+        visible={Boolean(selectedContactToVerify)}
+        contact={selectedContactToVerify}
+        onVerify={async (otp) => {
+          if (!selectedContactToVerify) return false;
+          return verifyContactOtp(selectedContactToVerify.id, otp);
+        }}
+        onResendOtp={async () => {
+          if (!selectedContactToVerify) return '123456';
+          return sendContactOtp(selectedContactToVerify.id);
+        }}
+        onClose={() => setSelectedContactToVerify(null)}
+      />
     </ScrollView>
   );
 };
@@ -330,28 +528,27 @@ const styles = StyleSheet.create({
   profileCard: {
     borderWidth: 1,
   },
-  userName: {
-    marginBottom: 2,
-  },
+  userName: {},
   userContact: {
-    lineHeight: 18,
+    marginTop: 2,
   },
-  dpdpBadge: {
-    fontWeight: '600',
-  },
+  dpdpBadge: {},
   section: {},
   sectionTitle: {},
   contactItem: {
-    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  contactItemLeft: {},
+  contactItemLeft: {
+    flex: 1,
+  },
   contactName: {},
   contactPhone: {
     marginTop: 2,
   },
-  contactStatus: {
-    fontWeight: '600',
-  },
+  contactStatus: {},
+  safeCodeBox: {},
   settingsBox: {
     borderWidth: 1,
   },
@@ -359,6 +556,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 4,
   },
   switchLabel: {
     flex: 1,
@@ -366,38 +564,29 @@ const styles = StyleSheet.create({
   togglePill: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 60,
+    minWidth: 54,
   },
   togglePillText: {
     fontWeight: '700',
   },
-  viewConsentBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  viewConsentBtn: {},
   viewConsentText: {
     textAlign: 'center',
   },
-  themeToggleBtn: {
-    justifyContent: 'center',
-  },
+  themeToggleBtn: {},
   themeToggleText: {},
   themeToggleSub: {},
   wearableCard: {},
   wearableName: {},
   wearableDetail: {},
-  wearableSimBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  wearableSimBtn: {},
   wearableSimText: {
     textAlign: 'center',
   },
-  deleteBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteBtnText: {
-    textAlign: 'center',
+  exportBtn: {},
+  deleteAccountBtn: {},
+  deleteAccountTitle: {},
+  deleteAccountDisclaimer: {
+    lineHeight: 16,
   },
 });

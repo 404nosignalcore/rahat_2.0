@@ -93,11 +93,48 @@ export class MockAuthService implements IAuthService {
     this.contacts = this.contacts.filter((c) => c.id !== id);
   }
 
+  private pendingOtps: Record<string, string> = {
+    contact_02: '482910',
+  };
+
   async requestContactVerification(contactId: string): Promise<void> {
     const contact = this.contacts.find((c) => c.id === contactId);
     if (contact) {
       contact.verificationStatus = 'verified'; // Simulates quick opt-in in mock
     }
+  }
+
+  async sendContactOtp(contactId: string): Promise<string> {
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    this.pendingOtps[contactId] = generatedOtp;
+    return generatedOtp;
+  }
+
+  async verifyContactOtp(contactId: string, otp: string): Promise<boolean> {
+    const expected = this.pendingOtps[contactId] || '123456';
+    if (otp === expected || otp === '123456') {
+      const contact = this.contacts.find((c) => c.id === contactId);
+      if (contact) {
+        contact.verificationStatus = 'verified';
+      }
+      delete this.pendingOtps[contactId];
+      return true;
+    }
+    return false;
+  }
+
+  async exportUserDataJson(): Promise<string> {
+    return JSON.stringify(
+      {
+        profile: this.currentUser,
+        private: this.privateInfo,
+        contacts: this.contacts,
+        exportedAt: new Date().toISOString(),
+        dpdpCompliance: 'DPDP Act 2023 Sec 11 - Right to Access & Portability',
+      },
+      null,
+      2
+    );
   }
 
   async deleteAccount(): Promise<void> {

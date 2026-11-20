@@ -35,8 +35,11 @@ export class MockCircleService implements ICircleService {
 
   async setShareLocation(circleId: string, shareLocation: boolean): Promise<void> {
     const circle = this.circles.find((c) => c.id === circleId);
-    if (circle && circle.members['demo_user_delhi_01']) {
-      circle.members['demo_user_delhi_01'].shareLocation = shareLocation;
+    if (circle) {
+      circle.sharingEnabled = shareLocation;
+      if (circle.members['demo_user_delhi_01']) {
+        circle.members['demo_user_delhi_01'].shareLocation = shareLocation;
+      }
     }
   }
 

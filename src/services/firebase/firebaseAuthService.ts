@@ -46,6 +46,18 @@ export class FirebaseAuthService implements IAuthService {
     return this.fallbackAuth.requestContactVerification(contactId);
   }
 
+  async sendContactOtp(contactId: string): Promise<string> {
+    return this.fallbackAuth.sendContactOtp(contactId);
+  }
+
+  async verifyContactOtp(contactId: string, otp: string): Promise<boolean> {
+    return this.fallbackAuth.verifyContactOtp(contactId, otp);
+  }
+
+  async exportUserDataJson(): Promise<string> {
+    return this.fallbackAuth.exportUserDataJson();
+  }
+
   async deleteAccount(): Promise<void> {
     // DPDP Act 2023 right to erasure
     return this.fallbackAuth.deleteAccount();

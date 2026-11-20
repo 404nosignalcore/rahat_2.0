@@ -24,6 +24,9 @@ export interface IAuthService {
   updateEmergencyContact(id: string, updates: Partial<EmergencyContact>): Promise<void>;
   deleteEmergencyContact(id: string): Promise<void>;
   requestContactVerification(contactId: string): Promise<void>;
+  sendContactOtp(contactId: string): Promise<string>;
+  verifyContactOtp(contactId: string, otp: string): Promise<boolean>;
+  exportUserDataJson(): Promise<string>;
   deleteAccount(): Promise<void>;
 }
 

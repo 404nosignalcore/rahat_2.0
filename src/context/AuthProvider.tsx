@@ -13,6 +13,10 @@ export interface AuthContextValue {
   hideConsentModal: () => void;
   acceptConsent: () => Promise<void>;
   updateConsents: (consents: Partial<ConsentPreferences>) => Promise<void>;
+  sendContactOtp: (contactId: string) => Promise<string>;
+  verifyContactOtp: (contactId: string, otp: string) => Promise<boolean>;
+  deleteAccount: () => Promise<void>;
+  exportUserDataJson: () => Promise<string>;
   refreshUserData: () => Promise<void>;
 }
 
@@ -32,7 +36,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(u);
       setPrivateInfo(p);
       if (u) {
-        // mock auth has contacts
         const mockAuth = authService as unknown as { getEmergencyContacts?: () => Promise<EmergencyContact[]> };
         if (mockAuth.getEmergencyContacts) {
           const c = await mockAuth.getEmergencyContacts();
@@ -69,6 +72,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await loadData();
   };
 
+  const sendContactOtp = async (contactId: string): Promise<string> => {
+    return authService.sendContactOtp(contactId);
+  };
+
+  const verifyContactOtp = async (contactId: string, otp: string): Promise<boolean> => {
+    const success = await authService.verifyContactOtp(contactId, otp);
+    if (success) {
+      await loadData();
+    }
+    return success;
+  };
+
+  const deleteAccount = async (): Promise<void> => {
+    await authService.deleteAccount();
+    setUser(null);
+    setPrivateInfo(null);
+    setContacts([]);
+  };
+
+  const exportUserDataJson = async (): Promise<string> => {
+    return authService.exportUserDataJson();
+  };
+
   const value: AuthContextValue = {
     user,
     privateInfo,
@@ -80,6 +106,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     hideConsentModal: () => setIsConsentModalVisible(false),
     acceptConsent,
     updateConsents,
+    sendContactOtp,
+    verifyContactOtp,
+    deleteAccount,
+    exportUserDataJson,
     refreshUserData: loadData,
   };
 
