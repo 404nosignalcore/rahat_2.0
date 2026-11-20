@@ -1,18 +1,26 @@
+import * as Haptics from 'expo-haptics';
+import * as SMS from 'expo-sms';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { sosService } from '../services';
-import { CreateAlertInput } from '../services';
-import { EmergencyAlert, LatLng } from '../types/safety';
+import { CreateAlertInput, sosService } from '../services';
+import { CoordsSource, EmergencyAlert, LatLng } from '../types/safety';
+
+export type CountdownOption = 3 | 5 | 10;
 
 export interface SOSContextValue {
   activeAlert: EmergencyAlert | null;
   countdownSeconds: number | null;
+  countdownDuration: CountdownOption;
   isDispatching: boolean;
-  startCountdown: (totalSeconds?: number) => void;
+  coordsSource: CoordsSource;
+  setCountdownDuration: (duration: CountdownOption) => void;
+  setCoordsSource: (source: CoordsSource) => void;
+  startCountdown: (totalSeconds?: CountdownOption) => void;
   cancelCountdown: () => void;
   sendImmediately: () => Promise<void>;
   cancelAlert: () => Promise<void>;
   resolveAlert: () => Promise<void>;
   triggerOfflineFallback: () => Promise<void>;
+  sendOfflineSmsToContacts: () => Promise<void>;
 }
 
 const SOSContext = createContext<SOSContextValue | null>(null);
@@ -20,6 +28,8 @@ const SOSContext = createContext<SOSContextValue | null>(null);
 export const SOSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeAlert, setActiveAlert] = useState<EmergencyAlert | null>(null);
   const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null);
+  const [countdownDuration, setCountdownDuration] = useState<CountdownOption>(5);
+  const [coordsSource, setCoordsSource] = useState<CoordsSource>('gps');
   const [isDispatching, setIsDispatching] = useState<boolean>(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -28,12 +38,25 @@ export const SOSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const a = await sosService.getActiveAlert();
         setActiveAlert(a);
+        if (a) {
+          setCoordsSource(a.coordsSource);
+        }
       } catch {
         // Safe fallback
       }
     };
     init();
   }, []);
+
+  const triggerHapticTick = () => {
+    try {
+      if (Haptics && Haptics.impactAsync) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+      }
+    } catch {
+      // Haptics unavailable on emulator or web
+    }
+  };
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -50,22 +73,28 @@ export const SOSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const input: CreateAlertInput = {
         location,
-        coordsSource: 'gps',
+        coordsSource,
         source: 'app',
         communityRescue: true,
       };
       const alert = await sosService.triggerAlert(input);
       setActiveAlert(alert);
     } catch {
-      // Offline fallback
+      // Fallback if network or service throws
+      if (activeAlert) {
+        const offline = await sosService.simulateOfflineDispatch(activeAlert.id);
+        setActiveAlert({ ...offline });
+      }
     } finally {
       setIsDispatching(false);
     }
   };
 
-  const startCountdown = (totalSeconds: number = 5) => {
+  const startCountdown = (totalSeconds?: CountdownOption) => {
     clearTimer();
-    setCountdownSeconds(totalSeconds);
+    const duration = totalSeconds ?? countdownDuration;
+    setCountdownSeconds(duration);
+    triggerHapticTick();
 
     timerRef.current = setInterval(() => {
       setCountdownSeconds((prev) => {
@@ -74,7 +103,8 @@ export const SOSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           dispatchAlert();
           return null;
         }
-        return prev - 1;
+        triggerHapticTick();
+        return (prev - 1) as CountdownOption;
       });
     }, 1000);
   };
@@ -110,16 +140,62 @@ export const SOSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  /**
+   * Honest Native SMS dispatch using expo-sms (Section 6 & 1.4):
+   * Opens the device SMS composer with emergency maps link.
+   * Tracks exact outcome:
+   * - offline_fallback_prepared (composer opened)
+   * - user_sent_via_sms (user confirmed and sent in SMS app)
+   */
+  const sendOfflineSmsToContacts = async () => {
+    if (!activeAlert) return;
+
+    const lat = activeAlert.location.latitude;
+    const lng = activeAlert.location.longitude;
+    const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+    const message = `EMERGENCY: I need help. My current location is ${mapsUrl} (Sent via Rahat Offline Fallback)`;
+
+    const phoneNumbers = activeAlert.contactDeliveries.map((c) => c.phone);
+
+    try {
+      const isAvailable = await SMS.isAvailableAsync();
+      if (isAvailable && phoneNumbers.length > 0) {
+        // First mark as offline_fallback_prepared
+        await triggerOfflineFallback();
+
+        const result = await SMS.sendSMSAsync(phoneNumbers, message);
+        if (result.result === 'sent') {
+          // Update all contact deliveries to user_sent_via_sms
+          let current = activeAlert;
+          for (const delivery of activeAlert.contactDeliveries) {
+            current = await sosService.recordUserSentSms(current.id, delivery.contactId);
+          }
+          setActiveAlert({ ...current });
+        }
+      } else {
+        // SMS unavailable, keep offline fallback prepared state
+        await triggerOfflineFallback();
+      }
+    } catch {
+      await triggerOfflineFallback();
+    }
+  };
+
   const value: SOSContextValue = {
     activeAlert,
     countdownSeconds,
+    countdownDuration,
     isDispatching,
+    coordsSource,
+    setCountdownDuration,
+    setCoordsSource,
     startCountdown,
     cancelCountdown,
     sendImmediately,
     cancelAlert,
     resolveAlert,
     triggerOfflineFallback,
+    sendOfflineSmsToContacts,
   };
 
   return <SOSContext.Provider value={value}>{children}</SOSContext.Provider>;

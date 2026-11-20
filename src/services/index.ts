@@ -3,6 +3,7 @@ import { MockReportsService } from './mock/mockReportsService';
 import { FirebaseReportsService } from './firebase/firebaseReportsService';
 import { MockJourneyService } from './mock/mockJourneyService';
 import { MockSosService } from './mock/mockSosService';
+import { FirebaseSosService } from './firebase/firebaseSosService';
 import { MockCircleService } from './mock/mockCircleService';
 import { MockSafeHavenService } from './mock/mockSafeHavenService';
 import { MockForumService } from './mock/mockForumService';
@@ -34,6 +35,7 @@ const mockReports = new MockReportsService();
 const firebaseReports = new FirebaseReportsService(mockReports);
 const mockJourney = new MockJourneyService();
 const mockSos = new MockSosService();
+const firebaseSos = new FirebaseSosService();
 const mockCircle = new MockCircleService();
 const mockSafeHaven = new MockSafeHavenService();
 const mockForum = new MockForumService();
@@ -44,7 +46,8 @@ export const authService: IAuthService = mockAuth;
 export const reportsService: IReportsService =
   SERVICE_MODE === 'firebase' ? firebaseReports : mockReports;
 export const journeyService: IJourneyService = mockJourney;
-export const sosService: ISosService = mockSos;
+export const sosService: ISosService =
+  SERVICE_MODE === 'firebase' ? firebaseSos : mockSos;
 export const circleService: ICircleService = mockCircle;
 export const safeHavenService: ISafeHavenService = mockSafeHaven;
 export const forumService: IForumService = mockForum;

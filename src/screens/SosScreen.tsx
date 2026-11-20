@@ -7,9 +7,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useSOS } from '../context/SOSProvider';
+import { CountdownOption, useSOS } from '../context/SOSProvider';
 import { useI18n } from '../i18n';
 import { useTheme } from '../theme';
+import { CoordsSource, DeliveryStatus } from '../types/safety';
 
 export const SosScreen: React.FC = () => {
   const { colors, typography, rounded, spacing, shadows, accessibility } = useTheme();
@@ -17,11 +18,17 @@ export const SosScreen: React.FC = () => {
   const {
     activeAlert,
     countdownSeconds,
+    countdownDuration,
+    coordsSource,
+    setCountdownDuration,
+    setCoordsSource,
     startCountdown,
     cancelCountdown,
     sendImmediately,
     cancelAlert,
+    resolveAlert,
     triggerOfflineFallback,
+    sendOfflineSmsToContacts,
   } = useSOS();
 
   const handleDial = (number: string) => {
@@ -31,9 +38,40 @@ export const SosScreen: React.FC = () => {
   const isCountingDown = countdownSeconds !== null;
   const isAlertActive = Boolean(activeAlert);
 
+  const getStatusBadgeStyle = (status: DeliveryStatus) => {
+    switch (status) {
+      case 'sent':
+      case 'user_sent_via_sms':
+        return {
+          bg: colors.safetySafeBackground,
+          text: colors.safetySafe,
+          label: status === 'user_sent_via_sms' ? 'USER SENT SMS' : 'SENT',
+        };
+      case 'pending':
+        return {
+          bg: colors.safetyCautionBackground,
+          text: colors.safetyCaution,
+          label: 'PENDING',
+        };
+      case 'offline_fallback_prepared':
+        return {
+          bg: colors.safetyCautionBackground,
+          text: colors.safetyCaution,
+          label: 'OFFLINE SMS READY',
+        };
+      case 'failed':
+      default:
+        return {
+          bg: colors.safetyDangerBackground,
+          text: colors.safetyDanger,
+          label: 'FAILED',
+        };
+    }
+  };
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.canvasParchment }]}>
-      {/* Signature SOS Card (Single Shadowed Element) */}
+      {/* Signature SOS Card (The Single Drop-Shadowed Element in Apple Museum Design) */}
       <View
         style={[
           styles.sosCard,
@@ -58,10 +96,54 @@ export const SosScreen: React.FC = () => {
         >
           {isAlertActive
             ? 'Distress broadcast active. Trusted contacts and community responders notified.'
-            : 'Hold button or tap to initiate 5-second cancelable distress countdown.'}
+            : 'Hold button or tap to initiate cancelable distress countdown.'}
         </Text>
 
-        {/* SOS Action Button */}
+        {/* Countdown Duration Selector (3s / 5s / 10s) */}
+        {!isAlertActive && !isCountingDown && (
+          <View style={[styles.durationSelectorRow, { marginBottom: spacing.md }]}>
+            <Text style={[styles.durationLabel, { color: colors.inkMuted48, ...typography.microLegal }]}>
+              COUNTDOWN:
+            </Text>
+            {([3, 5, 10] as CountdownOption[]).map((sec) => (
+              <TouchableOpacity
+                key={sec}
+                style={[
+                  styles.durationPill,
+                  {
+                    backgroundColor:
+                      countdownDuration === sec ? colors.primary : colors.surfacePearl,
+                    borderColor: countdownDuration === sec ? colors.primary : colors.hairline,
+                    borderRadius: rounded.pill,
+                    borderWidth: 1,
+                    paddingHorizontal: spacing.sm,
+                    paddingVertical: 4,
+                    marginHorizontal: 3,
+                    minHeight: 32,
+                    justifyContent: 'center',
+                  },
+                ]}
+                onPress={() => setCountdownDuration(sec)}
+                accessibilityRole="button"
+                accessibilityLabel={`Set countdown to ${sec} seconds`}
+              >
+                <Text
+                  style={[
+                    styles.durationText,
+                    {
+                      color: countdownDuration === sec ? colors.onPrimary : colors.ink,
+                      ...typography.microLegal,
+                    },
+                  ]}
+                >
+                  {sec}s
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* SOS Action State: Countdown vs Active vs Ready */}
         {isCountingDown ? (
           <View style={styles.countdownContainer}>
             <View
@@ -141,26 +223,51 @@ export const SosScreen: React.FC = () => {
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={[
-                styles.cancelActiveButton,
-                {
-                  backgroundColor: colors.surfacePearl,
-                  borderColor: colors.hairline,
-                  borderRadius: rounded.pill,
-                  minHeight: accessibility.minTouchTarget,
-                  paddingHorizontal: spacing.lg,
-                  marginTop: spacing.md,
-                },
-              ]}
-              onPress={cancelAlert}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel active SOS alert"
-            >
-              <Text style={[styles.cancelActiveText, { color: colors.ink, ...typography.bodyStrong }]}>
-                Cancel Alert
-              </Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', marginTop: spacing.md }}>
+              <TouchableOpacity
+                style={[
+                  styles.cancelActiveButton,
+                  {
+                    backgroundColor: colors.surfacePearl,
+                    borderColor: colors.hairline,
+                    borderRadius: rounded.pill,
+                    minHeight: accessibility.minTouchTarget,
+                    paddingHorizontal: spacing.md,
+                    flex: 1,
+                    marginRight: 4,
+                  },
+                ]}
+                onPress={cancelAlert}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel active SOS alert"
+              >
+                <Text style={[styles.cancelActiveText, { color: colors.ink, ...typography.bodyStrong }]}>
+                  Cancel Alert
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.cancelActiveButton,
+                  {
+                    backgroundColor: colors.safetySafeBackground,
+                    borderColor: colors.safetySafe,
+                    borderRadius: rounded.pill,
+                    minHeight: accessibility.minTouchTarget,
+                    paddingHorizontal: spacing.md,
+                    flex: 1,
+                    marginLeft: 4,
+                  },
+                ]}
+                onPress={resolveAlert}
+                accessibilityRole="button"
+                accessibilityLabel="Mark alert safe and resolved"
+              >
+                <Text style={[styles.cancelActiveText, { color: colors.safetySafe, ...typography.bodyStrong }]}>
+                  I Am Safe ✓
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <TouchableOpacity
@@ -173,9 +280,11 @@ export const SosScreen: React.FC = () => {
                 width: 120,
                 alignSelf: 'center',
                 marginVertical: spacing.md,
+                alignItems: 'center',
+                justifyContent: 'center',
               },
             ]}
-            onPress={() => startCountdown(5)}
+            onPress={() => startCountdown(countdownDuration)}
             accessibilityRole="button"
             accessibilityLabel={t.sos.triggerButton}
           >
@@ -189,7 +298,80 @@ export const SosScreen: React.FC = () => {
         )}
       </View>
 
-      {/* Official Emergency Dialers (Direct Pre-fill) */}
+      {/* GPS Coordinate Source Warning (Section 6 Requirement) */}
+      <View
+        style={[
+          styles.coordsWarningBox,
+          {
+            backgroundColor:
+              coordsSource === 'gps' ? colors.canvas : colors.safetyCautionBackground,
+            borderColor: coordsSource === 'gps' ? colors.hairline : colors.safetyCaution,
+            borderRadius: rounded.lg,
+            borderWidth: 1,
+            marginHorizontal: spacing.md,
+            marginBottom: spacing.md,
+            padding: spacing.md,
+          },
+        ]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text
+            style={[
+              styles.coordsWarningTitle,
+              {
+                color: coordsSource === 'gps' ? colors.ink : colors.safetyCaution,
+                ...typography.captionStrong,
+              },
+            ]}
+          >
+            {coordsSource === 'gps'
+              ? '📍 Live GPS Fix Active (Accurate)'
+              : coordsSource === 'stale'
+              ? '⚠️ Warning: Using Stale Coordinates'
+              : 'ℹ️ Demo Simulated Coordinates'}
+          </Text>
+
+          {/* Dev Coordinate Source Switcher */}
+          <View style={{ flexDirection: 'row' }}>
+            {(['gps', 'stale', 'demo'] as CoordsSource[]).map((src) => (
+              <TouchableOpacity
+                key={src}
+                onPress={() => setCoordsSource(src)}
+                style={{
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: rounded.sm,
+                  backgroundColor: coordsSource === src ? colors.primary : colors.surfacePearl,
+                  marginLeft: 3,
+                }}
+              >
+                <Text
+                  style={{
+                    color: coordsSource === src ? colors.onPrimary : colors.ink,
+                    fontSize: 10,
+                    fontWeight: '600',
+                  }}
+                >
+                  {src.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {coordsSource !== 'gps' && (
+          <Text
+            style={[
+              styles.coordsWarningDesc,
+              { color: colors.inkMuted80, ...typography.microLegal, marginTop: 4 },
+            ]}
+          >
+            Coordinates transmitted to responders may not reflect your exact real-time physical position.
+          </Text>
+        )}
+      </View>
+
+      {/* Official Emergency Dialers (Prefills Dialer Directly - Never Auto-calls) */}
       <View style={[styles.dialerSection, { paddingHorizontal: spacing.md, marginBottom: spacing.md }]}>
         <Text style={[styles.dialerHeader, { color: colors.ink, ...typography.captionStrong, marginBottom: spacing.xs }]}>
           Official Emergency Hotlines (Opens Dialer Directly)
@@ -247,7 +429,7 @@ export const SosScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* Per-Contact Delivery Status Audit */}
+      {/* Per-Contact Delivery Status Audit (Truth in Dispatch) */}
       {isAlertActive && activeAlert && (
         <View style={[styles.auditCard, { marginHorizontal: spacing.md, marginBottom: spacing.md }]}>
           <View
@@ -264,81 +446,100 @@ export const SosScreen: React.FC = () => {
             <Text style={[styles.auditTitle, { color: colors.ink, ...typography.bodyStrong }]}>
               {t.sos.deliveryStatusTitle}
             </Text>
-
-            {/* Warning for coords */}
-            <Text style={[styles.coordsNotice, { color: colors.safetyCaution, ...typography.finePrint, marginTop: 4 }]}>
-              📍 GPS Source: {activeAlert.coordsSource.toUpperCase()} (Delhi NCR Test Geohash)
+            <Text style={[styles.auditSubtitle, { color: colors.inkMuted80, ...typography.microLegal, marginBottom: spacing.xs }]}>
+              Truth in Dispatch: live delivery receipts per contact
             </Text>
 
             {/* Delivery list */}
-            {activeAlert.contactDeliveries.map((receipt) => (
-              <View
-                key={receipt.contactId}
-                style={[
-                  styles.receiptRow,
-                  {
-                    borderTopColor: colors.dividerSoft,
-                    borderTopWidth: StyleSheet.hairlineWidth,
-                    paddingVertical: spacing.xs,
-                    marginTop: spacing.xs,
-                  },
-                ]}
-              >
-                <View style={styles.receiptLeft}>
-                  <Text style={[styles.receiptName, { color: colors.ink, ...typography.bodyStrong }]}>
-                    {receipt.contactName} ({receipt.channel.toUpperCase()})
-                  </Text>
-                  <Text style={[styles.receiptDetail, { color: colors.inkMuted80, ...typography.finePrint }]}>
-                    {receipt.detail || receipt.phone}
-                  </Text>
-                </View>
-
+            {activeAlert.contactDeliveries.map((receipt) => {
+              const badge = getStatusBadgeStyle(receipt.status);
+              return (
                 <View
+                  key={receipt.contactId}
                   style={[
-                    styles.statusPill,
+                    styles.receiptRow,
                     {
-                      backgroundColor:
-                        receipt.status === 'sent'
-                          ? colors.safetySafeBackground
-                          : colors.surfacePearl,
-                      borderRadius: rounded.sm,
-                      paddingHorizontal: 8,
-                      paddingVertical: 2,
+                      borderTopColor: colors.dividerSoft,
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                      paddingVertical: spacing.xs,
+                      marginTop: spacing.xs,
                     },
                   ]}
                 >
-                  <Text
+                  <View style={styles.receiptLeft}>
+                    <Text style={[styles.receiptName, { color: colors.ink, ...typography.bodyStrong }]}>
+                      {receipt.contactName} ({receipt.channel.toUpperCase()})
+                    </Text>
+                    <Text style={[styles.receiptDetail, { color: colors.inkMuted80, ...typography.finePrint }]}>
+                      {receipt.detail || receipt.phone}
+                    </Text>
+                  </View>
+
+                  <View
                     style={[
-                      styles.statusPillText,
+                      styles.statusPill,
                       {
-                        color: receipt.status === 'sent' ? colors.safetySafe : colors.ink,
-                        ...typography.microLegal,
+                        backgroundColor: badge.bg,
+                        borderRadius: rounded.sm,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
                       },
                     ]}
                   >
-                    {receipt.status.toUpperCase()}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.statusPillText,
+                        {
+                          color: badge.text,
+                          ...typography.microLegal,
+                        },
+                      ]}
+                    >
+                      {badge.label}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
 
-            {/* Offline fallback button simulation */}
+            {/* Real Offline SMS Fallback Action */}
             <TouchableOpacity
               style={[
                 styles.offlineFallbackBtn,
                 {
                   backgroundColor: colors.surfacePearl,
+                  borderColor: colors.hairline,
+                  borderWidth: 1,
                   borderRadius: rounded.pill,
                   minHeight: accessibility.minTouchTarget,
                   marginTop: spacing.md,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+              ]}
+              onPress={sendOfflineSmsToContacts}
+              accessibilityRole="button"
+              accessibilityLabel="Open native SMS with emergency coordinates link"
+            >
+              <Text style={[styles.offlineFallbackText, { color: colors.primary, ...typography.captionStrong }]}>
+                💬 Send Native SMS with Maps Link
+              </Text>
+            </TouchableOpacity>
+
+            {/* Simulator Button */}
+            <TouchableOpacity
+              style={[
+                styles.offlineSimBtn,
+                {
+                  marginTop: spacing.xs,
+                  alignItems: 'center',
+                  paddingVertical: 6,
                 },
               ]}
               onPress={triggerOfflineFallback}
-              accessibilityRole="button"
-              accessibilityLabel="Simulate offline SMS fallback"
             >
-              <Text style={[styles.offlineFallbackText, { color: colors.primary, ...typography.captionStrong }]}>
-                Simulate Offline SMS Fallback
+              <Text style={{ color: colors.inkMuted48, fontSize: 11 }}>
+                (Simulate Offline Fallback Transition)
               </Text>
             </TouchableOpacity>
           </View>
@@ -396,6 +597,21 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     lineHeight: 18,
   },
+  durationSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  durationLabel: {
+    marginRight: 6,
+    letterSpacing: 0.5,
+  },
+  durationPill: {
+    alignItems: 'center',
+  },
+  durationText: {
+    fontWeight: '700',
+  },
   countdownContainer: {
     alignItems: 'center',
     width: '100%',
@@ -447,24 +663,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    width: '100%',
   },
   cancelActiveText: {
     textAlign: 'center',
   },
   triggerSosButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    elevation: 4,
   },
   sosButtonText: {
     fontWeight: '800',
+    fontSize: 28,
   },
   sosButtonSub: {
     marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  coordsWarningBox: {
+    borderWidth: 1,
+  },
+  coordsWarningTitle: {
+    fontWeight: '600',
+  },
+  coordsWarningDesc: {
+    lineHeight: 16,
   },
   dialerSection: {},
   dialerHeader: {
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   dialerRow: {
     flexDirection: 'row',
@@ -472,8 +699,10 @@ const styles = StyleSheet.create({
   dialerBtn: {
     borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   dialerNumber: {
+    fontWeight: '700',
     marginBottom: 2,
   },
   dialerLabel: {
@@ -486,8 +715,8 @@ const styles = StyleSheet.create({
   auditTitle: {
     marginBottom: 2,
   },
-  coordsNotice: {
-    marginBottom: 6,
+  auditSubtitle: {
+    marginBottom: 8,
   },
   receiptRow: {
     flexDirection: 'row',
@@ -496,7 +725,6 @@ const styles = StyleSheet.create({
   },
   receiptLeft: {
     flex: 1,
-    paddingRight: 8,
   },
   receiptName: {},
   receiptDetail: {
@@ -505,25 +733,30 @@ const styles = StyleSheet.create({
   statusPill: {},
   statusPillText: {
     fontWeight: '700',
+    letterSpacing: 0.5,
   },
   offlineFallbackBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: '100%',
   },
   offlineFallbackText: {
-    textAlign: 'center',
+    fontWeight: '600',
+  },
+  offlineSimBtn: {
+    width: '100%',
   },
   communityCard: {
     borderWidth: 1,
   },
-  communityTitle: {},
+  communityTitle: {
+    marginBottom: 2,
+  },
   communityDesc: {
     lineHeight: 18,
   },
   wavesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 4,
+    gap: 8,
   },
   waveItem: {},
 });

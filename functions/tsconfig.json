@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noImplicitAny": true,
+    "strict": true,
+    "outDir": "lib",
+    "sourceMap": true,
+    "strictNullChecks": true,
+    "target": "es2021",
+    "skipLibCheck": true,
+    "esModuleInterop": true
+  },
+  "compileOnSave": true,
+  "include": [
+    "src"
+  ]
+}

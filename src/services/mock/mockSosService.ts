@@ -74,4 +74,24 @@ export class MockSosService implements ISosService {
 
     return this.activeAlert;
   }
+
+  async recordUserSentSms(alertId: string, contactId: string): Promise<EmergencyAlert> {
+    if (!this.activeAlert || this.activeAlert.id !== alertId) {
+      throw new Error('Active alert not found');
+    }
+
+    this.activeAlert.contactDeliveries = this.activeAlert.contactDeliveries.map((delivery) => {
+      if (delivery.contactId === contactId) {
+        return {
+          ...delivery,
+          status: 'user_sent_via_sms',
+          detail: 'User tapped Send in native SMS composer',
+          timestamp: Date.now(),
+        };
+      }
+      return delivery;
+    });
+
+    return this.activeAlert;
+  }
 }

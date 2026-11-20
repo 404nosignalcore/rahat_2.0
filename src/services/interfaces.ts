@@ -66,6 +66,7 @@ export interface ISosService {
   cancelAlert(alertId: string): Promise<void>;
   resolveAlert(alertId: string): Promise<void>;
   simulateOfflineDispatch(alertId: string): Promise<EmergencyAlert>;
+  recordUserSentSms(alertId: string, contactId: string): Promise<EmergencyAlert>;
 }
 
 export interface ICircleService {
